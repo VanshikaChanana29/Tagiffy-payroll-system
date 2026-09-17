@@ -11,7 +11,7 @@ const ProtectedRoute = ({ allowedRoles }) => {
       <div className="min-h-screen bg-slate-900 flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
           <div className="w-10 h-10 border-3 border-brand-500 border-t-transparent rounded-full animate-spin"></div>
-          <span className="text-sm text-slate-400 font-medium">Authenticating WorkZen session...</span>
+          <span className="text-sm text-slate-400 font-medium">Authenticating Taggify session...</span>
         </div>
       </div>
     );
@@ -23,7 +23,7 @@ const ProtectedRoute = ({ allowedRoles }) => {
 
   if (allowedRoles && !allowedRoles.includes(user?.role)) {
     // Redirect based on actual role
-    if (user?.role === 'admin') {
+    if (user?.role === 'admin' || user?.role === 'super_admin') {
       return <Navigate to="/admin" replace />;
     } else {
       return <Navigate to="/employee" replace />;

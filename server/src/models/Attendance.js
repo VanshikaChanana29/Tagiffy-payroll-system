@@ -28,10 +28,48 @@ const attendanceSchema = new mongoose.Schema(
       enum: ['Present', 'Absent', 'Half-day', 'Leave'],
       default: 'Present',
     },
+    // Derived from the org shift settings whenever punches change.
+    isLate: {
+      type: Boolean,
+      default: false,
+    },
+    lateMinutes: {
+      type: Number,
+      default: 0,
+    },
+    earlyExitMinutes: {
+      type: Number,
+      default: 0,
+    },
+    overtimeHours: {
+      type: Number,
+      default: 0,
+    },
+    // Set when an approved regularization request rewrote this day.
+    isRegularized: {
+      type: Boolean,
+      default: false,
+    },
     workMode: {
       type: String,
       enum: ['Office', 'Remote'],
       default: 'Office',
+    },
+    // GPS snapshot captured from the browser at the moment of each punch.
+    // Null when the employee denied location permission.
+    checkInLocation: {
+      lat: { type: Number, default: null },
+      lng: { type: Number, default: null },
+      accuracy: { type: Number, default: null },
+      distanceMeters: { type: Number, default: null },
+      isOutsideGeofence: { type: Boolean, default: false },
+    },
+    checkOutLocation: {
+      lat: { type: Number, default: null },
+      lng: { type: Number, default: null },
+      accuracy: { type: Number, default: null },
+      distanceMeters: { type: Number, default: null },
+      isOutsideGeofence: { type: Boolean, default: false },
     },
     remarks: {
       type: String,

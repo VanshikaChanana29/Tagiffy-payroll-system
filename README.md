@@ -469,14 +469,29 @@ cd dayflow-hrms
 
 ---
 
-### Step 2: Set Up Backend Server
+### Step 2: Start the Database
+The app needs a running MongoDB. If you do not have MongoDB installed as a service,
+start the bundled persistent local database in its own terminal and leave it running:
+
+```bash
+cd server
+npm run db:start
+```
+
+This launches a real `mongod` server storing data in `server/.mongodb-data`, so
+**everything you create survives restarts**. The server refuses to start if no
+database is reachable, rather than silently falling back to a throwaway one.
+
+---
+
+### Step 3: Set Up Backend Server
 1. Navigate to the `server` directory and install dependencies:
    ```bash
    cd server
    npm install
    ```
 
-2. Create a `.env` file inside `server/` (or use defaults):
+2. Create a `.env` file inside `server/` (see `.env.example`):
    ```env
    PORT=5000
    NODE_ENV=development
@@ -497,7 +512,7 @@ cd dayflow-hrms
 
 ---
 
-### Step 3: Set Up Frontend Client
+### Step 4: Set Up Frontend Client
 1. Open a new terminal, navigate to the `client` directory, and install dependencies:
    ```bash
    cd client
@@ -512,7 +527,7 @@ cd dayflow-hrms
 
 ---
 
-### Step 4: Run Tests & Build Verification
+### Step 5: Run Tests & Build Verification
 - **Run Backend Verification Suites:**
    ```bash
    cd server

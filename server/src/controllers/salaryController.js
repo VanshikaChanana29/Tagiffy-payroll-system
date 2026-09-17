@@ -1,5 +1,9 @@
 const Salary = require('../models/Salary');
 const User = require('../models/User');
+const OrgSettings = require('../models/OrgSettings');
+const { canManageEmployee } = require('../utils/teamScope');
+const { isAdminRole } = require('../utils/roles');
+const { buildPayslipPdf } = require('../utils/payslipPdf');
 
 // Helper to compute gross and net salary
 const computeSalaryTotals = (data) => {
@@ -29,7 +33,7 @@ const computeSalaryTotals = (data) => {
 // @access  Private (Employee / Admin for self)
 const getMyPayslips = async (req, res) => {
   try {
-    const userId = (req.user.role === 'admin' && req.query.userId) ? req.query.userId : req.user._id;
+    const userId = (isAdminRole(req.user.role) && req.query.userId) ? req.query.userId : req.user._id;
 
     const payslips = await Salary.find({ userId })
       .populate('userId', 'name employeeId email department designation avatar joiningDate')
@@ -272,8 +276,64 @@ const updateSalaryRecord = async (req, res) => {
   }
 };
 
+
+// @desc    Download a payslip as a PDF
+// @route   GET /api/salaries/:id/payslip
+// @access  Private (own payslip, the employee's manager, or Admin)
+const downloadPayslipPdf = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const salary = await Salary.findById(id).populate(
+      'userId',
+      'name employeeId email department designation joiningDate'
+    );
+    if (!salary) {
+      return res.status(404).json({ success: false, message: 'Payslip not found' });
+    }
+
+    const employee = salary.userId;
+    const isSelf = employee && employee._id.toString() === req.user._id.toString();
+
+    // Salary is the most sensitive record in the system: your own, your team's,
+    // or HR's. Nothing else.
+    if (!isSelf && !(await canManageEmployee(req.user, employee._id))) {
+      return res.status(403).json({
+        success: false,
+        message: 'You are not allowed to view this payslip.',
+      });
+    }
+
+    const settings = await OrgSettings.getSettings();
+    const period = `${salary.year}-${String(salary.month).padStart(2, '0')}`;
+    const fileName = `Payslip_${(employee.name || 'employee').replace(/\s+/g, '_')}_${period}.pdf`;
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+
+    buildPayslipPdf(res, {
+      salary,
+      employee,
+      companyName: settings.companyName,
+    });
+  } catch (error) {
+    console.error('Payslip PDF Error:', error);
+    // Headers may already be on their way once streaming starts.
+    if (!res.headersSent) {
+      res.status(500).json({
+        success: false,
+        message: 'Failed to generate payslip PDF',
+        error: error.message,
+      });
+    } else {
+      res.end();
+    }
+  }
+};
+
 module.exports = {
   getMyPayslips,
+  downloadPayslipPdf,
   getAllPayroll,
   createSalaryRecord,
   updateSalaryRecord,

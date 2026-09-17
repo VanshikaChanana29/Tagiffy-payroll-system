@@ -20,10 +20,18 @@ const leaveSchema = new mongoose.Schema(
       type: String, // Format: YYYY-MM-DD
       required: [true, 'End date is required'],
     },
+    // Working days actually charged against the balance. Weekends and other
+    // non-working days inside the range are not deducted.
     daysCount: {
       type: Number,
       required: true,
       min: [0.5, 'Days count must be at least 0.5'],
+    },
+    // Total calendar days the request spans, kept so the UI can show
+    // "18-21 Sep (4 days, 2 working days charged)".
+    calendarDays: {
+      type: Number,
+      default: 0,
     },
     reason: {
       type: String,
@@ -32,8 +40,12 @@ const leaveSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['Pending', 'Approved', 'Rejected'],
+      enum: ['Pending', 'Approved', 'Rejected', 'Cancelled'],
       default: 'Pending',
+    },
+    cancelledAt: {
+      type: Date,
+      default: null,
     },
     adminComment: {
       type: String,

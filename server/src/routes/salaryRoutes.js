@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const {
   getMyPayslips,
+  downloadPayslipPdf,
   getAllPayroll,
   createSalaryRecord,
   updateSalaryRecord,
@@ -13,6 +14,9 @@ router.use(protect);
 
 // Employee read-only endpoint
 router.get('/my-payslips', getMyPayslips);
+
+// Any signed-in user may ask; the controller decides whose payslip they may see.
+router.get('/:id/payslip', downloadPayslipPdf);
 
 // Admin management endpoints
 router.get('/all', authorize('admin'), getAllPayroll);

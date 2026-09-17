@@ -8,6 +8,7 @@ import {
 import api from '../../api/client';
 import { useToast } from '../../context/ToastContext';
 import { format, differenceInCalendarDays, parseISO, isAfter } from 'date-fns';
+import Tooltip from '../common/Tooltip';
 
 const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, userBalance }) => {
   const [leaveType, setLeaveType] = useState('Paid');
@@ -95,11 +96,11 @@ const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, userBalance }) => {
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl space-y-6 my-8 transition-colors">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl max-w-lg w-full p-6 sm:p-8 shadow-soft space-y-6 my-8 transition-colors">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-violet-500/10 text-violet-600 dark:text-violet-400 flex items-center justify-center">
+            <div className="w-10 h-10 rounded-xl bg-brand-500/10 text-brand-600 dark:text-brand-400 flex items-center justify-center">
               <CalendarDays className="w-5 h-5" />
             </div>
             <div>
@@ -107,12 +108,14 @@ const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, userBalance }) => {
               <p className="text-xs text-slate-500 dark:text-slate-400">Submit a leave request for HR approval</p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="text-slate-400 hover:text-slate-700 dark:hover:text-white p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <Tooltip label="Close" side="left">
+            <button aria-label="Close"
+              onClick={onClose}
+              className="text-slate-400 hover:text-slate-700 dark:hover:text-white p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </Tooltip>
         </div>
 
         {/* Leave Type Selector Chips */}
@@ -124,7 +127,7 @@ const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, userBalance }) => {
             <button
               type="button"
               onClick={() => setLeaveType('Paid')}
-              className={`p-3 rounded-2xl border text-left transition-all ${
+              className={`p-3 rounded-xl border text-left transition-all ${
                 leaveType === 'Paid'
                   ? 'bg-emerald-50 dark:bg-emerald-950/50 border-emerald-500 text-slate-900 dark:text-white shadow-sm ring-1 ring-emerald-500'
                   : 'bg-slate-50 dark:bg-slate-950/60 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
@@ -139,7 +142,7 @@ const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, userBalance }) => {
             <button
               type="button"
               onClick={() => setLeaveType('Sick')}
-              className={`p-3 rounded-2xl border text-left transition-all ${
+              className={`p-3 rounded-xl border text-left transition-all ${
                 leaveType === 'Sick'
                   ? 'bg-brand-50 dark:bg-brand-950/50 border-brand-500 text-slate-900 dark:text-white shadow-sm ring-1 ring-brand-500'
                   : 'bg-slate-50 dark:bg-slate-950/60 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
@@ -154,13 +157,13 @@ const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, userBalance }) => {
             <button
               type="button"
               onClick={() => setLeaveType('Unpaid')}
-              className={`p-3 rounded-2xl border text-left transition-all ${
+              className={`p-3 rounded-xl border text-left transition-all ${
                 leaveType === 'Unpaid'
-                  ? 'bg-indigo-50 dark:bg-indigo-950/50 border-indigo-500 text-slate-900 dark:text-white shadow-sm ring-1 ring-indigo-500'
+                  ? 'bg-brand-50 dark:bg-brand-950/50 border-brand-500 text-slate-900 dark:text-white shadow-sm ring-1 ring-brand-500'
                   : 'bg-slate-50 dark:bg-slate-950/60 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
-              <div className="text-xs font-bold text-indigo-600 dark:text-indigo-400">Unpaid</div>
+              <div className="text-xs font-bold text-brand-600 dark:text-brand-400">Unpaid</div>
               <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Salary adjusted</div>
             </button>
           </div>
@@ -177,7 +180,7 @@ const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, userBalance }) => {
                 required
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-brand-500"
+                className="theme-input w-full"
               />
             </div>
 
@@ -188,13 +191,13 @@ const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, userBalance }) => {
                 required
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-brand-500"
+                className="theme-input w-full"
               />
             </div>
           </div>
 
           {/* Dynamic Days Summary */}
-          <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 flex items-center justify-between">
+          <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 flex items-center justify-between">
             <span className="text-slate-600 dark:text-slate-400 font-medium">Calculated Duration:</span>
             <span className="font-bold text-emerald-600 dark:text-emerald-400 text-sm">
               {daysCount} {daysCount === 1 ? 'Day' : 'Days'}
@@ -210,7 +213,7 @@ const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, userBalance }) => {
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               placeholder="e.g. Attending hackathon finals, family function, viral fever..."
-              className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-brand-500 resize-none"
+              className="theme-input w-full resize-none"
             />
           </div>
 
@@ -234,7 +237,7 @@ const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, userBalance }) => {
             <button
               type="submit"
               disabled={submitting || !!errorMsg || daysCount <= 0}
-              className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white font-semibold shadow-glow flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-6 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white font-semibold flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {submitting ? (
                 <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>

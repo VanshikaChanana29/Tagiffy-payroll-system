@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 64" width="300" height="64">
+  <!-- Badge mark -->
+  <g transform="translate(4, 8)">
+    <circle cx="24" cy="24" r="23" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5" />
+    <path d="M11.5 14.4 H36.5 V21.1 H29.3 V35.5 H18.7 V21.1 H11.5 Z" fill="#0a0a0b" />
+    <polygon points="24,9.6 29.8,21.1 18.2,21.1" fill="#f97316" />
+  </g>
+
+  <!-- Wordmark -->
+  <text x="62" y="39" font-family="Plus Jakarta Sans, Inter, system-ui, sans-serif"
+        font-weight="800" font-size="26" fill="#0a0a0b" letter-spacing="0.5">
+    TAG<tspan fill="#f97316">GIFY</tspan>
+  </text>
+
+  <!-- HRMS pill -->
+  <g transform="translate(206, 20)">
+    <rect x="0" y="0" width="46" height="22" rx="6" fill="#f97316" fill-opacity="0.12"
+          stroke="#f97316" stroke-opacity="0.35" />
+    <text x="23" y="15" text-anchor="middle" font-family="Plus Jakarta Sans, Inter, system-ui, sans-serif"
+          font-weight="700" font-size="10" fill="#ea580c" letter-spacing="0.6">HRMS</text>
+  </g>
+</svg>

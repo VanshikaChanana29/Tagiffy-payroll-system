@@ -7,12 +7,35 @@
     "dev:server": "npm --prefix server run dev",
     "dev:client": "npm --prefix client run dev",
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
-    "seed": "npm --prefix server run seed"
+    "seed": "npm --prefix server run seed",
+    "db:inspect": "npm --prefix server run db:inspect",
+    "db:shell": "npm --prefix server run db:shell",
+    "db:clear": "npm --prefix server run db:clear",
+    "db:start": "npm --prefix server run db:start",
+    "dev:all": "concurrently -n db,server,client -c magenta,cyan,green \"npm run db:start\" \"npm run dev:server\" \"npm run dev:client\"",
+    "build": "npm --prefix client run build",
+    "pm2:start": "pm2 start ecosystem.config.js",
+    "pm2:stop": "pm2 stop ecosystem.config.js",
+    "pm2:restart": "pm2 restart ecosystem.config.js",
+    "pm2:delete": "pm2 delete ecosystem.config.js",
+    "pm2:status": "pm2 status",
+    "pm2:logs": "pm2 logs",
+    "pm2:start:prod": "pm2 start ecosystem.prod.config.js",
+    "pm2:stop:prod": "pm2 stop ecosystem.prod.config.js",
+    "pm2:restart:prod": "pm2 restart ecosystem.prod.config.js",
+    "pm2:delete:prod": "pm2 delete ecosystem.prod.config.js"
   },
-  "keywords": ["hrms", "react", "express", "mongodb", "hackathon"],
+  "keywords": [
+    "hrms",
+    "react",
+    "express",
+    "mongodb",
+    "hackathon"
+  ],
   "author": "Dayflow Team",
   "license": "ISC",
   "devDependencies": {
-    "concurrently": "^9.1.2"
+    "concurrently": "^9.1.2",
+    "pm2": "^7.0.4"
   }
 }

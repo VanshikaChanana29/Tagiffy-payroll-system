@@ -7,17 +7,25 @@
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "seed": "node src/utils/seedData.js",
-    "test": "node src/test_phase1.js"
+    "db:inspect": "node src/utils/dbInspect.js",
+    "db:shell": "node src/utils/dbConsole.js",
+    "db:clear": "node src/utils/clearDb.js",
+    "test": "node src/test_phase1.js",
+    "db:start": "node src/utils/startMongo.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",
     "date-fns": "^4.1.0",
+    "dayflow-hrms": "file:..",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.2",
     "mongodb-memory-server": "^10.1.4",
-    "mongoose": "^8.12.0"
+    "mongoose": "^8.12.0",
+    "multer": "^1.4.5-lts.1",
+    "pdfkit": "^0.20.2",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "nodemon": "^3.1.9"

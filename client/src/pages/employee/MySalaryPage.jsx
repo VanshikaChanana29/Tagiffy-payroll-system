@@ -8,11 +8,14 @@ import {
   Sparkles,
   TrendingDown,
   TrendingUp,
+  Download,
 } from 'lucide-react';
 import api from '../../api/client';
+import { downloadPayslip, readBlobError } from '../../api/payslips';
 import { useToast } from '../../context/ToastContext';
+import { useAuth } from '../../context/AuthContext';
 import { format } from 'date-fns';
-import { WorkZenIcon } from '../../components/common/WorkZenLogo';
+import { TaggifyIcon } from '../../components/common/TaggifyLogo';
 
 const MySalaryPage = () => {
   const [payslips, setPayslips] = useState([]);
@@ -20,6 +23,7 @@ const MySalaryPage = () => {
   const [loading, setLoading] = useState(true);
 
   const toast = useToast();
+  const { user } = useAuth();
 
   const fetchPayslips = async () => {
     try {
@@ -50,6 +54,22 @@ const MySalaryPage = () => {
     return months[m - 1] || `Month ${m}`;
   };
 
+
+  const [downloading, setDownloading] = useState(false);
+
+  const handleDownload = async () => {
+    if (!selectedPayslip) return;
+    try {
+      setDownloading(true);
+      await downloadPayslip(selectedPayslip, user?.name);
+      toast.success('Payslip downloaded');
+    } catch (err) {
+      toast.error((await readBlobError(err)) || 'Failed to download payslip');
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Title & Month Selector */}
@@ -64,7 +84,7 @@ const MySalaryPage = () => {
         </div>
 
         {payslips.length > 0 && (
-          <div className="flex items-center gap-2 px-3.5 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm dark:shadow-card">
+          <div className="flex items-center gap-2 px-3.5 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm dark:shadow-card">
             <Calendar className="w-4 h-4 text-brand-600 dark:text-brand-400" />
             <span className="text-xs text-slate-600 dark:text-slate-400 font-medium">Select Cycle:</span>
             <select
@@ -81,6 +101,16 @@ const MySalaryPage = () => {
                 </option>
               ))}
             </select>
+
+          <button
+            type="button"
+            onClick={handleDownload}
+            disabled={!selectedPayslip || downloading}
+            className="px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold flex items-center gap-2 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+          >
+            <Download className="w-4 h-4" />
+            {downloading ? 'Preparing...' : 'Download PDF'}
+          </button>
           </div>
         )}
       </div>
@@ -91,7 +121,7 @@ const MySalaryPage = () => {
           <span className="text-xs">Loading official payslip records...</span>
         </div>
       ) : !selectedPayslip ? (
-        <div className="p-12 text-center text-slate-500 dark:text-slate-400 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm">
+        <div className="p-12 text-center text-slate-500 dark:text-slate-400 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm">
           <AlertCircle className="w-10 h-10 text-slate-400 mx-auto mb-3" />
           <p className="text-sm font-semibold text-slate-900 dark:text-white">No Payslip Records Found</p>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
@@ -102,7 +132,7 @@ const MySalaryPage = () => {
         <>
           {/* Summary Metric Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-            <div className="p-5 rounded-2xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex items-center justify-between transition-colors">
+            <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex items-center justify-between transition-colors">
               <div>
                 <span className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold uppercase tracking-wider">
                   Net Take-Home Pay
@@ -119,7 +149,7 @@ const MySalaryPage = () => {
               </div>
             </div>
 
-            <div className="p-5 rounded-2xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex items-center justify-between transition-colors">
+            <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex items-center justify-between transition-colors">
               <div>
                 <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider">
                   Gross Earnings
@@ -134,7 +164,7 @@ const MySalaryPage = () => {
               </div>
             </div>
 
-            <div className="p-5 rounded-2xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex items-center justify-between transition-colors">
+            <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex items-center justify-between transition-colors">
               <div>
                 <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider">
                   Total Deductions
@@ -145,14 +175,14 @@ const MySalaryPage = () => {
                     selectedPayslip.grossSalary - selectedPayslip.netSalary
                   )?.toLocaleString('en-IN')}
                 </div>
-                <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 block">PF & Statutory Taxes</span>
+                <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 block">Loss of pay & adjustments</span>
               </div>
               <div className="w-10 h-10 rounded-xl bg-rose-500/10 text-rose-600 dark:text-rose-400 flex items-center justify-center">
                 <TrendingDown className="w-5 h-5" />
               </div>
             </div>
 
-            <div className="p-5 rounded-2xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex items-center justify-between transition-colors">
+            <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex items-center justify-between transition-colors">
               <div>
                 <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider">
                   Payment Status
@@ -174,21 +204,21 @@ const MySalaryPage = () => {
                     : 'End of Month'}
                 </span>
               </div>
-              <div className="w-10 h-10 rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+              <div className="w-10 h-10 rounded-xl bg-brand-500/10 text-brand-600 dark:text-brand-400 flex items-center justify-center">
                 <CreditCard className="w-5 h-5" />
               </div>
             </div>
           </div>
 
           {/* FORMAL DIGITAL PAYSLIP CARD */}
-          <div className="rounded-3xl bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 p-6 sm:p-10 shadow-sm dark:shadow-2xl space-y-8 transition-colors">
+          <div className="rounded-xl bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 p-6 sm:p-10 shadow-sm dark:shadow-soft space-y-8 transition-colors">
             {/* Payslip Header */}
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-6">
               <div className="flex items-center gap-3">
-                <WorkZenIcon size={44} />
+                <TaggifyIcon size={44} />
                 <div>
                   <h3 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">
-                    WorkZen Technologies Pvt. Ltd.
+                    Taggify Media Pvt. Ltd.
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
                     Salary Statement for {getMonthName(selectedPayslip.month)}{' '}
@@ -206,7 +236,7 @@ const MySalaryPage = () => {
             </div>
 
             {/* Employee Particulars Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-5 rounded-2xl bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 text-xs">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-5 rounded-xl bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 text-xs">
               <div>
                 <span className="text-slate-500 dark:text-slate-400 font-semibold block uppercase">Employee Name</span>
                 <span className="text-slate-900 dark:text-white font-bold text-sm mt-0.5 block">
@@ -276,24 +306,30 @@ const MySalaryPage = () => {
               <div className="space-y-3">
                 <div className="flex items-center justify-between border-b border-rose-500/30 pb-2">
                   <h4 className="font-bold text-rose-600 dark:text-rose-400 uppercase tracking-wider flex items-center gap-1.5">
-                    <TrendingDown className="w-4 h-4" /> Statutory Deductions
+                    <TrendingDown className="w-4 h-4" /> Deductions
                   </h4>
                   <span className="text-slate-500 dark:text-slate-400 font-semibold uppercase">Amount (INR)</span>
                 </div>
 
                 <div className="space-y-2">
-                  <div className="flex justify-between py-1 text-slate-700 dark:text-slate-300 border-b border-slate-100 dark:border-slate-800/60">
-                    <span>Provident Fund (Employee PF)</span>
-                    <span className="font-mono font-semibold text-slate-900 dark:text-white">
-                      ₹{(selectedPayslip.deductions?.pf || 0)?.toLocaleString('en-IN')}
-                    </span>
-                  </div>
-                  <div className="flex justify-between py-1 text-slate-700 dark:text-slate-300 border-b border-slate-100 dark:border-slate-800/60">
-                    <span>Income Tax (TDS)</span>
-                    <span className="font-mono font-semibold text-slate-900 dark:text-white">
-                      ₹{(selectedPayslip.deductions?.tax || 0)?.toLocaleString('en-IN')}
-                    </span>
-                  </div>
+                  {/* Pay is CTC / 12: PF and TDS only show on older payslips
+                      that actually carry them. */}
+                  {(selectedPayslip.deductions?.pf || 0) > 0 && (
+                    <div className="flex justify-between py-1 text-slate-700 dark:text-slate-300 border-b border-slate-100 dark:border-slate-800/60">
+                      <span>Provident Fund (Employee PF)</span>
+                      <span className="font-mono font-semibold text-slate-900 dark:text-white">
+                        ₹{selectedPayslip.deductions.pf.toLocaleString('en-IN')}
+                      </span>
+                    </div>
+                  )}
+                  {(selectedPayslip.deductions?.tax || 0) > 0 && (
+                    <div className="flex justify-between py-1 text-slate-700 dark:text-slate-300 border-b border-slate-100 dark:border-slate-800/60">
+                      <span>Income Tax (TDS)</span>
+                      <span className="font-mono font-semibold text-slate-900 dark:text-white">
+                        ₹{selectedPayslip.deductions.tax.toLocaleString('en-IN')}
+                      </span>
+                    </div>
+                  )}
                   <div className="flex justify-between py-1 text-slate-700 dark:text-slate-300 border-b border-slate-100 dark:border-slate-800/60">
                     <span>Unpaid Leave Deductions</span>
                     <span className="font-mono font-semibold text-slate-900 dark:text-white">
@@ -314,7 +350,7 @@ const MySalaryPage = () => {
             </div>
 
             {/* Net Salary Highlight Footer Box */}
-            <div className="p-6 rounded-2xl bg-gradient-to-r from-brand-50 dark:from-brand-950/60 via-slate-50 dark:via-slate-950 to-indigo-50 dark:to-indigo-950/60 border border-brand-500/30 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="p-6 rounded-xl bg-brand-50 dark:bg-brand-950/40 border border-brand-500/30 flex flex-col sm:flex-row items-center justify-between gap-4">
               <div>
                 <span className="text-xs font-bold text-brand-700 dark:text-brand-300 uppercase tracking-wider block">
                   Net Salary Payable in Account

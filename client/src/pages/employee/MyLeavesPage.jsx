@@ -8,6 +8,7 @@ import {
   Search,
   HeartHandshake,
   MessageSquare,
+  Ban,
 } from 'lucide-react';
 import ApplyLeaveModal from '../../components/leave/ApplyLeaveModal';
 import api from '../../api/client';
@@ -65,6 +66,12 @@ const MyLeavesPage = () => {
             <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span> Pending Review
           </span>
         );
+      case 'Cancelled':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-500/15 text-slate-600 dark:text-slate-400 border border-slate-500/25">
+            <Ban className="w-3 h-3" /> Cancelled
+          </span>
+        );
       case 'Rejected':
         return (
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-rose-500/15 text-rose-700 dark:text-rose-300 border border-rose-500/25">
@@ -90,6 +97,29 @@ const MyLeavesPage = () => {
     return matchesStatus && matchesSearch;
   });
 
+
+  const todayStr = new Date().toISOString().slice(0, 10);
+
+  const handleCancelLeave = async (leave) => {
+    const isApproved = leave.status === 'Approved';
+    const confirmed = window.confirm(
+      isApproved
+        ? `Cancel your approved leave for ${leave.startDate}?\n\nThe ${leave.daysCount} day(s) will be added back to your balance.`
+        : `Withdraw your pending request for ${leave.startDate}?`
+    );
+    if (!confirmed) return;
+
+    try {
+      const res = await api.put(`/leaves/${leave._id}/cancel`);
+      if (res.data.success) {
+        toast.success(res.data.message);
+        fetchMyLeaves();
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to cancel leave request');
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Title & Apply Button */}
@@ -105,7 +135,7 @@ const MyLeavesPage = () => {
 
         <button
           onClick={() => setModalOpen(true)}
-          className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white text-xs font-semibold shadow-glow flex items-center gap-2 transition-all shrink-0"
+          className="px-4 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-xs font-semibold flex items-center gap-2 transition-all shrink-0"
         >
           <Plus className="w-4 h-4" />
           <span>Apply for Leave</span>
@@ -114,7 +144,7 @@ const MyLeavesPage = () => {
 
       {/* Leave Balance Overview Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="p-5 rounded-2xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex items-center justify-between transition-colors">
+        <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex items-center justify-between transition-colors">
           <div>
             <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider">
               Paid Leave Balance
@@ -129,7 +159,7 @@ const MyLeavesPage = () => {
           </div>
         </div>
 
-        <div className="p-5 rounded-2xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex items-center justify-between transition-colors">
+        <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex items-center justify-between transition-colors">
           <div>
             <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider">
               Sick Leave Balance
@@ -144,7 +174,7 @@ const MyLeavesPage = () => {
           </div>
         </div>
 
-        <div className="p-5 rounded-2xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex items-center justify-between transition-colors">
+        <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex items-center justify-between transition-colors">
           <div>
             <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider">
               Pending Requests
@@ -162,16 +192,16 @@ const MyLeavesPage = () => {
       </div>
 
       {/* Filter & Search Bar */}
-      <div className="p-4 rounded-2xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex flex-col sm:flex-row items-center justify-between gap-4">
+      <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex flex-col sm:flex-row items-center justify-between gap-4">
         {/* Status Filter Tabs */}
         <div className="flex items-center gap-1.5 p-1 bg-slate-100 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl w-full sm:w-auto">
-          {['All', 'Pending', 'Approved', 'Rejected'].map((status) => (
+          {['All', 'Pending', 'Approved', 'Rejected', 'Cancelled'].map((status) => (
             <button
               key={status}
               onClick={() => setSelectedStatus(status)}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                 selectedStatus === status
-                  ? 'bg-brand-600 text-white shadow-glow'
+                  ? 'bg-brand-600 text-white'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
@@ -188,13 +218,13 @@ const MyLeavesPage = () => {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search reason or date..."
-            className="w-full pl-10 pr-4 py-2 bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-brand-500"
+            className="theme-input w-full pl-10 pr-4 text-xs"
           />
         </div>
       </div>
 
       {/* Leave History Table */}
-      <div className="rounded-3xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm dark:shadow-card transition-colors">
+      <div className="rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm dark:shadow-card transition-colors">
         {loading ? (
           <div className="p-12 text-center text-slate-500 dark:text-slate-400 flex flex-col items-center gap-3">
             <div className="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin"></div>
@@ -227,7 +257,7 @@ const MyLeavesPage = () => {
                             ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25'
                             : l.leaveType === 'Sick'
                             ? 'bg-brand-500/15 text-brand-700 dark:text-brand-300 border border-brand-500/25'
-                            : 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border border-indigo-500/25'
+                            : 'bg-brand-500/15 text-brand-700 dark:text-brand-300 border border-brand-500/25'
                         }`}
                       >
                         {l.leaveType} Leave
@@ -242,11 +272,36 @@ const MyLeavesPage = () => {
 
                     <td className="px-6 py-4 font-bold text-slate-900 dark:text-white">
                       {l.daysCount} {l.daysCount === 1 ? 'day' : 'days'}
+                      {l.calendarDays > l.daysCount && (
+                        <span className="block text-[10px] font-medium text-slate-400 mt-0.5">
+                          {l.calendarDays} calendar days
+                        </span>
+                      )}
                     </td>
 
                     <td className="px-6 py-4 text-slate-700 dark:text-slate-300 max-w-xs">{l.reason}</td>
 
-                    <td className="px-6 py-4">{getStatusBadge(l.status)}</td>
+                    <td className="px-6 py-4">
+                      <div className="flex flex-col items-start gap-1.5">
+                        {getStatusBadge(l.status)}
+                        {(l.status === 'Pending' ||
+                          (l.status === 'Approved' && l.startDate > todayStr)) && (
+                          <button
+                            type="button"
+                            onClick={() => handleCancelLeave(l)}
+                            title={
+                              l.status === 'Approved'
+                                ? 'Withdraw this approved leave and get the days back'
+                                : 'Withdraw this request'
+                            }
+                            className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-lg text-rose-600 dark:text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/25 transition-colors"
+                          >
+                            <Ban className="w-3 h-3" />
+                            Cancel
+                          </button>
+                        )}
+                      </div>
+                    </td>
 
                     <td className="px-6 py-4 text-slate-500 dark:text-slate-400 max-w-xs">
                       {l.adminComment ? (

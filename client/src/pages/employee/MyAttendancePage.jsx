@@ -11,35 +11,31 @@ import {
   CalendarDays,
   Sparkles,
 } from 'lucide-react';
+import MonthAttendanceCalendar from '../../components/attendance/MonthAttendanceCalendar';
 import CheckInOutWidget from '../../components/attendance/CheckInOutWidget';
 import api from '../../api/client';
+import RegularizationPanel from '../../components/attendance/RegularizationPanel';
 import { useToast } from '../../context/ToastContext';
 import { format } from 'date-fns';
 
 const MyAttendancePage = () => {
-  const [weeklyData, setWeeklyData] = useState([]);
   const [historyData, setHistoryData] = useState([]);
-  const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [selectedStatus, setSelectedStatus] = useState('All');
   const [search, setSearch] = useState('');
+  // MonthAttendanceCalendar fetches its own data internally and has no prop
+  // that tells it to refetch, so bumping this key remounts it after a punch.
+  const [calendarRefreshKey, setCalendarRefreshKey] = useState(0);
 
   const toast = useToast();
 
   const fetchAttendanceData = async () => {
     try {
       setLoading(true);
-      const [weeklyRes, historyRes] = await Promise.all([
-        api.get('/attendance/my-weekly'),
-        api.get('/attendance/my-history?limit=30'),
-      ]);
+      const historyRes = await api.get('/attendance/my-history?limit=30');
 
-      if (weeklyRes.data.success) {
-        setWeeklyData(weeklyRes.data.weeklyDays || []);
-      }
       if (historyRes.data.success) {
         setHistoryData(historyRes.data.records || []);
-        setStats(historyRes.data.stats || null);
       }
     } catch (error) {
       toast.error('Failed to load attendance logs');
@@ -68,8 +64,8 @@ const MyAttendancePage = () => {
         );
       case 'Leave':
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-violet-500/15 text-violet-700 dark:text-violet-300 border border-violet-500/25">
-            <CalendarDays className="w-3 h-3 text-violet-600 dark:text-violet-400" /> Leave
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-brand-500/15 text-brand-700 dark:text-brand-300 border border-brand-500/25">
+            <CalendarDays className="w-3 h-3 text-brand-600 dark:text-brand-400" /> Leave
           </span>
         );
       case 'Weekend':
@@ -105,105 +101,21 @@ const MyAttendancePage = () => {
   return (
     <div className="space-y-8">
       {/* Top Interactive Punch Widget */}
-      <CheckInOutWidget onAttendanceChange={fetchAttendanceData} />
+      <CheckInOutWidget
+        onAttendanceChange={() => {
+          fetchAttendanceData();
+          setCalendarRefreshKey((k) => k + 1);
+        }}
+      />
 
-      {/* Weekly View (Mon - Sun) */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-base font-bold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
-            <Calendar className="w-4 h-4 text-brand-600 dark:text-brand-400" />
-            Current Week Schedule & Attendance
-          </h3>
-          <span className="text-xs text-slate-500 dark:text-slate-400">Monday – Sunday</span>
-        </div>
-
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
-          {weeklyData.map((day) => (
-            <div
-              key={day.date}
-              className={`p-4 rounded-2xl border transition-all flex flex-col justify-between min-h-[140px] ${
-                day.isToday
-                  ? 'bg-white dark:bg-slate-900 border-brand-500 shadow-sm dark:shadow-glow ring-2 ring-brand-500/30'
-                  : day.status === 'Weekend'
-                  ? 'bg-slate-50 dark:bg-slate-950/40 border-slate-200 dark:border-slate-800/40 opacity-70'
-                  : 'bg-white dark:bg-slate-900/70 border-slate-200 dark:border-slate-800 shadow-sm'
-              }`}
-            >
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">{day.shortDay}</span>
-                  {day.isToday && (
-                    <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-brand-600 text-white">
-                      Today
-                    </span>
-                  )}
-                </div>
-                <div className="text-lg font-black text-slate-900 dark:text-white">{day.dayNumber}</div>
-              </div>
-
-              <div className="space-y-2 mt-3">
-                <div>{getStatusBadge(day.status)}</div>
-                <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
-                  {day.totalHours > 0 ? `${day.totalHours} hrs` : day.checkIn ? 'In Progress' : '—'}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Monthly Metrics Summary */}
-      {stats && (
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-          <div className="p-4 rounded-2xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex items-center justify-between transition-colors">
-            <div>
-              <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold uppercase">Present Days</span>
-              <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1">
-                {stats.presentCount}{' '}
-                <span className="text-xs font-normal text-slate-500 dark:text-slate-400">days</span>
-              </div>
-            </div>
-            <CheckCircle2 className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
-          </div>
-
-          <div className="p-4 rounded-2xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex items-center justify-between transition-colors">
-            <div>
-              <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold uppercase">Half-Days</span>
-              <div className="text-2xl font-black text-amber-600 dark:text-amber-400 mt-1">
-                {stats.halfDayCount}{' '}
-                <span className="text-xs font-normal text-slate-500 dark:text-slate-400">days</span>
-              </div>
-            </div>
-            <Clock className="w-6 h-6 text-amber-600 dark:text-amber-400" />
-          </div>
-
-          <div className="p-4 rounded-2xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex items-center justify-between transition-colors">
-            <div>
-              <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold uppercase">Total Hours</span>
-              <div className="text-2xl font-black text-brand-600 dark:text-brand-400 mt-1">
-                {stats.totalHoursWorked} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">hrs</span>
-              </div>
-            </div>
-            <Sparkles className="w-6 h-6 text-brand-600 dark:text-brand-400" />
-          </div>
-
-          <div className="p-4 rounded-2xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex items-center justify-between transition-colors">
-            <div>
-              <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold uppercase">Daily Average</span>
-              <div className="text-2xl font-black text-indigo-600 dark:text-indigo-400 mt-1">
-                {stats.avgDailyHours} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">hrs/day</span>
-              </div>
-            </div>
-            <Clock className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
-          </div>
-        </div>
-      )}
+      {/* Full Interactive Month Attendance Calendar */}
+      <MonthAttendanceCalendar key={calendarRefreshKey} onAttendanceChange={fetchAttendanceData} />
 
       {/* Full Attendance History Table */}
       <div className="space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <h3 className="text-base font-bold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
-            <Clock className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+            <Clock className="w-4 h-4 text-brand-600 dark:text-brand-400" />
             Attendance History Log
           </h3>
 
@@ -216,7 +128,7 @@ const MyAttendancePage = () => {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search date or remarks..."
-                className="pl-9 pr-3 py-1.5 bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                className="theme-input w-full pl-9 pr-3 text-xs"
               />
             </div>
 
@@ -226,7 +138,7 @@ const MyAttendancePage = () => {
               <select
                 value={selectedStatus}
                 onChange={(e) => setSelectedStatus(e.target.value)}
-                className="px-3 py-1.5 bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-brand-500"
+                className="theme-input text-xs"
               >
                 <option value="All">All Statuses</option>
                 <option value="Present">Present</option>
@@ -238,7 +150,7 @@ const MyAttendancePage = () => {
           </div>
         </div>
 
-        <div className="rounded-3xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm dark:shadow-card transition-colors">
+        <div className="rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm dark:shadow-card transition-colors">
           {loading ? (
             <div className="p-12 text-center text-slate-500 dark:text-slate-400 flex flex-col items-center gap-3">
               <div className="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin"></div>
@@ -278,7 +190,7 @@ const MyAttendancePage = () => {
                       <td className="px-6 py-3.5">
                         <span className="inline-flex items-center gap-1 text-slate-700 dark:text-slate-300">
                           {item.workMode === 'Remote' ? (
-                            <Laptop className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
+                            <Laptop className="w-3 h-3 text-brand-600 dark:text-brand-400" />
                           ) : (
                             <Building className="w-3 h-3 text-brand-600 dark:text-brand-400" />
                           )}
@@ -297,6 +209,7 @@ const MyAttendancePage = () => {
           )}
         </div>
       </div>
+      <RegularizationPanel />
     </div>
   );
 };

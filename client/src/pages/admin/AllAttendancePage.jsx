@@ -12,13 +12,18 @@ import {
   Edit3,
   X,
   Save,
+  MapPinOff,
 } from 'lucide-react';
 import api from '../../api/client';
+import RegularizationApprovals from '../../components/admin/RegularizationApprovals';
+import useDepartments from '../../hooks/useDepartments';
 import { useToast } from '../../context/ToastContext';
 import demoAvatars from '../../utils/avatars';
 import { format } from 'date-fns';
+import Tooltip from '../../components/common/Tooltip';
 
 const AllAttendancePage = () => {
+  const departments = useDepartments();
   const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [department, setDepartment] = useState('All');
   const [statusFilter, setStatusFilter] = useState('All');
@@ -107,8 +112,8 @@ const AllAttendancePage = () => {
         );
       case 'Leave':
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-violet-500/15 text-violet-700 dark:text-violet-300 border border-violet-500/25">
-            <CalendarDays className="w-3 h-3 text-violet-600 dark:text-violet-400" /> Leave
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-brand-500/15 text-brand-700 dark:text-brand-300 border border-brand-500/25">
+            <CalendarDays className="w-3 h-3 text-brand-600 dark:text-brand-400" /> Leave
           </span>
         );
       default:
@@ -134,7 +139,7 @@ const AllAttendancePage = () => {
         </div>
 
         {/* Date Selector */}
-        <div className="flex items-center gap-2 px-3.5 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm dark:shadow-card">
+        <div className="flex items-center gap-2 px-3.5 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm dark:shadow-card">
           <Calendar className="w-4 h-4 text-brand-600 dark:text-brand-400" />
           <span className="text-xs text-slate-600 dark:text-slate-400 font-medium">Select Date:</span>
           <input
@@ -148,7 +153,7 @@ const AllAttendancePage = () => {
 
       {/* Metric Counters */}
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-        <div className="p-5 rounded-2xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex items-center justify-between transition-colors">
+        <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex items-center justify-between transition-colors">
           <div>
             <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold uppercase">Total Recorded</span>
             <div className="text-2xl font-black text-slate-900 dark:text-white mt-1">{records.length}</div>
@@ -158,7 +163,7 @@ const AllAttendancePage = () => {
           </div>
         </div>
 
-        <div className="p-5 rounded-2xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex items-center justify-between transition-colors">
+        <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex items-center justify-between transition-colors">
           <div>
             <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold uppercase">Present</span>
             <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1">
@@ -170,7 +175,7 @@ const AllAttendancePage = () => {
           </div>
         </div>
 
-        <div className="p-5 rounded-2xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex items-center justify-between transition-colors">
+        <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex items-center justify-between transition-colors">
           <div>
             <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold uppercase">Half-Day</span>
             <div className="text-2xl font-black text-amber-600 dark:text-amber-400 mt-1">
@@ -182,21 +187,21 @@ const AllAttendancePage = () => {
           </div>
         </div>
 
-        <div className="p-5 rounded-2xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex items-center justify-between transition-colors">
+        <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex items-center justify-between transition-colors">
           <div>
             <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold uppercase">On Leave</span>
-            <div className="text-2xl font-black text-violet-600 dark:text-violet-400 mt-1">
+            <div className="text-2xl font-black text-brand-600 dark:text-brand-400 mt-1">
               {stats.totalLeave}
             </div>
           </div>
-          <div className="w-10 h-10 rounded-xl bg-violet-500/10 text-violet-600 dark:text-violet-400 flex items-center justify-center">
+          <div className="w-10 h-10 rounded-xl bg-brand-500/10 text-brand-600 dark:text-brand-400 flex items-center justify-center">
             <CalendarDays className="w-5 h-5" />
           </div>
         </div>
       </div>
 
       {/* Filter & Search Bar */}
-      <div className="p-4 rounded-2xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex flex-col md:flex-row items-center justify-between gap-4">
+      <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex flex-col md:flex-row items-center justify-between gap-4">
         <div className="relative w-full md:w-80">
           <Search className="w-3.5 h-3.5 text-slate-400 absolute inset-y-0 left-3.5 my-auto" />
           <input
@@ -204,7 +209,7 @@ const AllAttendancePage = () => {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search employee name or ID..."
-            className="w-full pl-10 pr-4 py-2 bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-brand-500"
+            className="theme-input w-full pl-10 pr-4 text-xs"
           />
         </div>
 
@@ -215,14 +220,14 @@ const AllAttendancePage = () => {
             <select
               value={department}
               onChange={(e) => setDepartment(e.target.value)}
-              className="px-3 py-1.5 bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-brand-500"
+              className="theme-input text-xs"
             >
               <option value="All">All Departments</option>
-              <option value="Engineering">Engineering</option>
-              <option value="Product Design">Product Design</option>
-              <option value="Sales & Marketing">Sales & Marketing</option>
-              <option value="Human Resources">Human Resources</option>
-              <option value="Finance">Finance</option>
+              {departments.map((d) => (
+                <option key={d._id} value={d.name}>
+                  {d.name}
+                </option>
+              ))}
             </select>
           </div>
 
@@ -231,7 +236,7 @@ const AllAttendancePage = () => {
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-3 py-1.5 bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-brand-500"
+              className="theme-input text-xs"
             >
               <option value="All">All Statuses</option>
               <option value="Present">Present</option>
@@ -243,7 +248,7 @@ const AllAttendancePage = () => {
       </div>
 
       {/* Attendance Records Table */}
-      <div className="rounded-3xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm dark:shadow-card transition-colors">
+      <div className="rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm dark:shadow-card transition-colors">
         {loading ? (
           <div className="p-12 text-center text-slate-500 dark:text-slate-400 flex flex-col items-center gap-3">
             <div className="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin"></div>
@@ -295,7 +300,24 @@ const AllAttendancePage = () => {
                     </td>
 
                     <td className="px-6 py-4 text-slate-600 dark:text-slate-300 font-mono">
-                      {r.checkIn ? format(new Date(r.checkIn), 'hh:mm:ss a') : '—'}
+                      <div className="flex items-center gap-1.5">
+                        <span>{r.checkIn ? format(new Date(r.checkIn), 'hh:mm:ss a') : '—'}</span>
+                        {r.checkInLocation?.isOutsideGeofence && (
+                          <Tooltip
+                            label={`Punched in ${r.checkInLocation.distanceMeters}m from office`}
+                            side="top"
+                          >
+                            <a
+                              href={`https://www.google.com/maps?q=${r.checkInLocation.lat},${r.checkInLocation.lng}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex"
+                            >
+                              <MapPinOff className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                            </a>
+                          </Tooltip>
+                        )}
+                      </div>
                     </td>
 
                     <td className="px-6 py-4 text-slate-600 dark:text-slate-300 font-mono">
@@ -309,7 +331,7 @@ const AllAttendancePage = () => {
                     <td className="px-6 py-4">
                       <span className="inline-flex items-center gap-1 text-slate-700 dark:text-slate-300">
                         {r.workMode === 'Remote' ? (
-                          <Laptop className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
+                          <Laptop className="w-3 h-3 text-brand-600 dark:text-brand-400" />
                         ) : (
                           <Building className="w-3 h-3 text-brand-600 dark:text-brand-400" />
                         )}
@@ -343,7 +365,7 @@ const AllAttendancePage = () => {
       {/* EDIT / REGULARIZE MODAL */}
       {editModalOpen && selectedRecord && (
         <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-5 transition-colors">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl max-w-md w-full p-6 shadow-soft space-y-5 transition-colors">
             <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
               <div>
                 <h3 className="text-base font-bold text-slate-900 dark:text-white">Regularize Attendance</h3>
@@ -351,12 +373,14 @@ const AllAttendancePage = () => {
                   {selectedRecord.userId?.name} • {selectedRecord.date}
                 </p>
               </div>
-              <button
-                onClick={() => setEditModalOpen(false)}
-                className="text-slate-400 hover:text-slate-700 dark:hover:text-white p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
-              >
-                <X className="w-4 h-4" />
-              </button>
+              <Tooltip label="Close" side="left">
+                <button aria-label="Close"
+                  onClick={() => setEditModalOpen(false)}
+                  className="text-slate-400 hover:text-slate-700 dark:hover:text-white p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </Tooltip>
             </div>
 
             <form onSubmit={handleUpdateRecord} className="space-y-4 text-xs">
@@ -367,7 +391,7 @@ const AllAttendancePage = () => {
                   onChange={(e) =>
                     setSelectedRecord({ ...selectedRecord, status: e.target.value })
                   }
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-brand-500"
+                  className="theme-input w-full"
                 >
                   <option value="Present">Present</option>
                   <option value="Half-day">Half-day</option>
@@ -388,7 +412,7 @@ const AllAttendancePage = () => {
                       totalHours: parseFloat(e.target.value),
                     })
                   }
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-brand-500"
+                  className="theme-input w-full"
                 />
               </div>
 
@@ -399,7 +423,7 @@ const AllAttendancePage = () => {
                   onChange={(e) =>
                     setSelectedRecord({ ...selectedRecord, workMode: e.target.value })
                   }
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-brand-500"
+                  className="theme-input w-full"
                 >
                   <option value="Office">Office</option>
                   <option value="Remote">Remote</option>
@@ -415,7 +439,7 @@ const AllAttendancePage = () => {
                     setSelectedRecord({ ...selectedRecord, remarks: e.target.value })
                   }
                   placeholder="Regularization justification..."
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-brand-500"
+                  className="theme-input w-full"
                 />
               </div>
 
@@ -430,7 +454,7 @@ const AllAttendancePage = () => {
                 <button
                   type="submit"
                   disabled={saving}
-                  className="px-5 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-semibold flex items-center gap-1.5 shadow-glow disabled:opacity-50"
+                  className="px-5 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-semibold flex items-center gap-1.5 disabled:opacity-50"
                 >
                   {saving ? (
                     <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
@@ -444,6 +468,7 @@ const AllAttendancePage = () => {
           </div>
         </div>
       )}
+      <RegularizationApprovals onApproved={fetchCompanyAttendance} />
     </div>
   );
 };

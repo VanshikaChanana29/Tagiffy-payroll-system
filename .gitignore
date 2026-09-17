@@ -31,3 +31,11 @@ Thumbs.db
 *.njsproj
 *.sln
 *.sw?
+
+# Local MongoDB data directory (persistent dev database)
+.mongodb-data/
+server/.mongodb-data/
+
+# Uploaded employee documents (real files)
+server/uploads/
+uploads/

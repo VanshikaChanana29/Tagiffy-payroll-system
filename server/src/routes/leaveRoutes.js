@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const {
   applyLeave,
+  cancelMyLeave,
   getMyLeaves,
   getAllLeaves,
   updateLeaveStatus,
@@ -14,9 +15,11 @@ router.use(protect);
 // Employee actions
 router.post('/', applyLeave);
 router.get('/my-leaves', getMyLeaves);
+router.put('/:id/cancel', cancelMyLeave);
 
-// Admin actions
-router.get('/all', authorize('admin'), getAllLeaves);
-router.put('/:id/status', authorize('admin'), updateLeaveStatus);
+// Admin and manager actions. Managers are scoped to their own team inside the
+// controller, so the same endpoints serve both roles.
+router.get('/all', authorize('admin', 'manager'), getAllLeaves);
+router.put('/:id/status', authorize('admin', 'manager'), updateLeaveStatus);
 
 module.exports = router;

@@ -10,10 +10,13 @@ import {
   X,
 } from 'lucide-react';
 import api from '../../api/client';
+import useDepartments from '../../hooks/useDepartments';
 import { useToast } from '../../context/ToastContext';
 import demoAvatars from '../../utils/avatars';
+import Tooltip from '../../components/common/Tooltip';
 
 const LeaveApprovalPage = () => {
+  const departments = useDepartments();
   const [leaves, setLeaves] = useState([]);
   const [stats, setStats] = useState({ total: 0, pending: 0, approved: 0, rejected: 0 });
   const [loading, setLoading] = useState(true);
@@ -75,6 +78,12 @@ const LeaveApprovalPage = () => {
 
   const handleDecisionSubmit = async (e) => {
     e.preventDefault();
+
+    // A refusal with no explanation is not a decision the employee can act on.
+    if (decisionType === 'Rejected' && !adminComment.trim()) {
+      toast.error('Please give a reason so the employee understands the decision.');
+      return;
+    }
     if (!selectedLeave) return;
 
     setActionLoading(true);
@@ -139,7 +148,7 @@ const LeaveApprovalPage = () => {
 
       {/* Metric Counters */}
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-        <div className="p-5 rounded-2xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex items-center justify-between transition-colors">
+        <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex items-center justify-between transition-colors">
           <div>
             <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold uppercase">Pending Review</span>
             <div className="text-2xl font-black text-amber-600 dark:text-amber-400 mt-1">{stats.pending}</div>
@@ -149,7 +158,7 @@ const LeaveApprovalPage = () => {
           </div>
         </div>
 
-        <div className="p-5 rounded-2xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex items-center justify-between transition-colors">
+        <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex items-center justify-between transition-colors">
           <div>
             <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold uppercase">Approved Leaves</span>
             <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1">{stats.approved}</div>
@@ -159,7 +168,7 @@ const LeaveApprovalPage = () => {
           </div>
         </div>
 
-        <div className="p-5 rounded-2xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex items-center justify-between transition-colors">
+        <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex items-center justify-between transition-colors">
           <div>
             <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold uppercase">Rejected</span>
             <div className="text-2xl font-black text-rose-600 dark:text-rose-400 mt-1">{stats.rejected}</div>
@@ -169,7 +178,7 @@ const LeaveApprovalPage = () => {
           </div>
         </div>
 
-        <div className="p-5 rounded-2xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex items-center justify-between transition-colors">
+        <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex items-center justify-between transition-colors">
           <div>
             <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold uppercase">Total Requests</span>
             <div className="text-2xl font-black text-brand-600 dark:text-brand-400 mt-1">{stats.total}</div>
@@ -181,16 +190,16 @@ const LeaveApprovalPage = () => {
       </div>
 
       {/* Filter & Search Bar */}
-      <div className="p-4 rounded-2xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex flex-col md:flex-row items-center justify-between gap-4">
+      <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex flex-col md:flex-row items-center justify-between gap-4">
         {/* Status Filter Tabs */}
         <div className="flex items-center gap-1.5 p-1 bg-slate-100 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl w-full md:w-auto">
-          {['Pending', 'Approved', 'Rejected', 'All'].map((status) => (
+          {['Pending', 'Approved', 'Rejected', 'Cancelled', 'All'].map((status) => (
             <button
               key={status}
               onClick={() => setStatusFilter(status)}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                 statusFilter === status
-                  ? 'bg-brand-600 text-white shadow-glow'
+                  ? 'bg-brand-600 text-white'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
@@ -211,14 +220,14 @@ const LeaveApprovalPage = () => {
             <select
               value={department}
               onChange={(e) => setDepartment(e.target.value)}
-              className="px-3 py-1.5 bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-brand-500"
+              className="theme-input text-xs"
             >
               <option value="All">All Departments</option>
-              <option value="Engineering">Engineering</option>
-              <option value="Product Design">Product Design</option>
-              <option value="Sales & Marketing">Sales & Marketing</option>
-              <option value="Human Resources">Human Resources</option>
-              <option value="Finance">Finance</option>
+              {departments.map((d) => (
+                <option key={d._id} value={d.name}>
+                  {d.name}
+                </option>
+              ))}
             </select>
           </div>
 
@@ -229,14 +238,14 @@ const LeaveApprovalPage = () => {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search employee or reason..."
-              className="w-full pl-9 pr-3 py-1.5 bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-brand-500"
+              className="theme-input w-full pl-9 pr-3 text-xs"
             />
           </div>
         </div>
       </div>
 
       {/* Requests Table */}
-      <div className="rounded-3xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm dark:shadow-card transition-colors">
+      <div className="rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm dark:shadow-card transition-colors">
         {loading ? (
           <div className="p-12 text-center text-slate-500 dark:text-slate-400 flex flex-col items-center gap-3">
             <div className="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin"></div>
@@ -291,7 +300,7 @@ const LeaveApprovalPage = () => {
                             ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25'
                             : l.leaveType === 'Sick'
                             ? 'bg-brand-500/15 text-brand-700 dark:text-brand-300 border border-brand-500/25'
-                            : 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border border-indigo-500/25'
+                            : 'bg-brand-500/15 text-brand-700 dark:text-brand-300 border border-brand-500/25'
                         }`}
                       >
                         {l.leaveType} Leave
@@ -372,7 +381,7 @@ const LeaveApprovalPage = () => {
       {/* DECISION MODAL */}
       {showModal && selectedLeave && (
         <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-5 transition-colors">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl max-w-md w-full p-6 shadow-soft space-y-5 transition-colors">
             <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
               <div>
                 <h3 className="text-base font-bold text-slate-900 dark:text-white">
@@ -382,16 +391,18 @@ const LeaveApprovalPage = () => {
                   {selectedLeave.userId?.name} • {selectedLeave.daysCount} days ({selectedLeave.leaveType} Leave)
                 </p>
               </div>
-              <button
-                onClick={() => setShowModal(false)}
-                className="text-slate-400 hover:text-slate-700 dark:hover:text-white p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
-              >
-                <X className="w-4 h-4" />
-              </button>
+              <Tooltip label="Close" side="left">
+                <button aria-label="Close"
+                  onClick={() => setShowModal(false)}
+                  className="text-slate-400 hover:text-slate-700 dark:hover:text-white p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </Tooltip>
             </div>
 
             <form onSubmit={handleDecisionSubmit} className="space-y-4 text-xs">
-              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 space-y-1.5">
+              <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 space-y-1.5">
                 <div className="flex justify-between text-slate-500 dark:text-slate-400">
                   <span>Duration:</span>
                   <span className="text-slate-900 dark:text-white font-bold">
@@ -414,14 +425,21 @@ const LeaveApprovalPage = () => {
 
               <div>
                 <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  HR Administrator Remarks / Comment
+                  {decisionType === 'Rejected'
+                    ? 'Reason for rejection *'
+                    : 'HR Administrator Remarks / Comment'}
                 </label>
                 <textarea
                   rows={3}
+                  required={decisionType === 'Rejected'}
                   value={adminComment}
                   onChange={(e) => setAdminComment(e.target.value)}
-                  placeholder="Enter comments visible to employee..."
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-brand-500 resize-none"
+                  placeholder={
+                    decisionType === 'Rejected'
+                      ? 'Explain what the employee should do differently...'
+                      : 'Enter comments visible to employee...'
+                  }
+                  className="theme-input w-full resize-none"
                 />
               </div>
 
@@ -436,7 +454,7 @@ const LeaveApprovalPage = () => {
                 <button
                   type="submit"
                   disabled={actionLoading}
-                  className={`px-5 py-2 rounded-xl text-white font-semibold flex items-center gap-1.5 shadow-glow disabled:opacity-50 ${
+                  className={`px-5 py-2 rounded-xl text-white font-semibold flex items-center gap-1.5 disabled:opacity-50 ${
                     decisionType === 'Approved'
                       ? 'bg-emerald-600 hover:bg-emerald-500'
                       : 'bg-rose-600 hover:bg-rose-500'

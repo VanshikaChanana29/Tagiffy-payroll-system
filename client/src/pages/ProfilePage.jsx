@@ -18,12 +18,30 @@ import {
   Camera,
   Check,
   Shield,
+  Lock,
+  KeyRound,
+  Eye,
+  EyeOff,
+  Download,
+  Upload,
+  ImagePlus,
+  Type,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
-import demoAvatars from '../utils/avatars';
 import api from '../api/client';
+import {
+  uploadDocument,
+  downloadDocument,
+  readBlobError,
+  uploadAvatar,
+  resetAvatar,
+  MAX_DOC_MB,
+  MAX_PHOTO_MB,
+} from '../api/files';
+import { buildInitialsAvatar } from '../utils/initialsAvatar';
 import { format } from 'date-fns';
+import Tooltip from '../components/common/Tooltip';
 
 const ProfilePage = () => {
   const { user, updateUser, isAdmin } = useAuth();
@@ -37,6 +55,22 @@ const ProfilePage = () => {
   // Modals state
   const [showAvatarModal, setShowAvatarModal] = useState(false);
   const [showAddDocModal, setShowAddDocModal] = useState(false);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+
+  const [passwordData, setPasswordData] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: '',
+  });
+  const [showCurrentPass, setShowCurrentPass] = useState(false);
+  const [showNewPass, setShowNewPass] = useState(false);
+  const [passSubmitting, setPassSubmitting] = useState(false);
+
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const [rejectTarget, setRejectTarget] = useState(null);
+  const [rejectReason, setRejectReason] = useState('');
   const [newDoc, setNewDoc] = useState({
     name: '',
     type: 'Government ID',
@@ -124,37 +158,102 @@ const ProfilePage = () => {
     }
   };
 
-  const handleSelectAvatar = async (avatarUri) => {
+  const handlePhotoPicked = async (file) => {
+    if (!file) return;
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      toast.error('Please choose a JPG, PNG, or WEBP image.');
+      return;
+    }
+    if (file.size > MAX_PHOTO_MB * 1024 * 1024) {
+      toast.error(`Image is too large. Maximum size is ${MAX_PHOTO_MB} MB.`);
+      return;
+    }
+
     try {
-      setFormData((prev) => ({ ...prev, avatar: avatarUri }));
-      const res = await api.put(`/users/${user._id || user.id}`, { avatar: avatarUri });
+      setPhotoUploading(true);
+      const res = await uploadAvatar(user._id || user.id, file);
       if (res.data.success) {
         updateUser(res.data.employee);
-        toast.success('Profile picture updated successfully!');
+        setFormData((prev) => ({ ...prev, avatar: res.data.avatar }));
+        toast.success('Profile photo updated successfully!');
         setShowAvatarModal(false);
       }
     } catch (err) {
-      toast.error('Failed to update profile picture');
+      toast.error(err.response?.data?.message || 'Failed to upload profile photo');
+    } finally {
+      setPhotoUploading(false);
+    }
+  };
+
+  const handleUseInitials = async () => {
+    try {
+      setPhotoUploading(true);
+      const res = await resetAvatar(user._id || user.id);
+      if (res.data.success) {
+        updateUser(res.data.employee);
+        setFormData((prev) => ({ ...prev, avatar: res.data.avatar }));
+        toast.success('Profile photo set to your initials');
+        setShowAvatarModal(false);
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to reset profile photo');
+    } finally {
+      setPhotoUploading(false);
     }
   };
 
   const handleAddDocument = async (e) => {
     e.preventDefault();
-    if (!newDoc.name || !newDoc.type) {
-      toast.error('Please enter document title and select type');
+    if (!selectedFile) {
+      toast.error('Please choose a PDF file to upload');
+      return;
+    }
+    if (!newDoc.type) {
+      toast.error('Please select a document type');
       return;
     }
 
     try {
-      const res = await api.post(`/users/${user._id || user.id}/documents`, newDoc);
+      setUploading(true);
+      const res = await uploadDocument(user._id || user.id, {
+        file: selectedFile,
+        name: newDoc.name,
+        type: newDoc.type,
+      });
       if (res.data.success) {
-        toast.success('Document uploaded successfully!');
+        toast.success(res.data.message || 'Document uploaded successfully!');
         setDocuments(res.data.documents || []);
         setShowAddDocModal(false);
-        setNewDoc({ name: '', type: 'Government ID', fileSize: '1.2 MB' });
+        setSelectedFile(null);
+        setNewDoc({ name: '', type: 'Government ID', fileSize: '' });
       }
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to add document');
+      toast.error(err.response?.data?.message || 'Failed to upload document');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleFilePicked = (file) => {
+    if (!file) return;
+    if (file.type !== 'application/pdf') {
+      toast.error('Only PDF files are accepted.');
+      return;
+    }
+    if (file.size > MAX_DOC_MB * 1024 * 1024) {
+      toast.error(`File is too large. Maximum size is ${MAX_DOC_MB} MB.`);
+      return;
+    }
+    setSelectedFile(file);
+    // Default the title to the real filename unless the person typed one.
+    setNewDoc((prev) => ({ ...prev, name: prev.name || file.name }));
+  };
+
+  const handleDownloadDocument = async (doc) => {
+    try {
+      await downloadDocument(user._id || user.id, doc);
+    } catch (err) {
+      toast.error((await readBlobError(err)) || 'Failed to download document');
     }
   };
 
@@ -163,7 +262,7 @@ const ProfilePage = () => {
     try {
       const res = await api.delete(`/users/${user._id || user.id}/documents/${docId}`);
       if (res.data.success) {
-        toast.success('Document removed successfully');
+        toast.success('Document deleted successfully');
         setDocuments(res.data.documents || []);
       }
     } catch (err) {
@@ -171,28 +270,64 @@ const ProfilePage = () => {
     }
   };
 
-  const handleVerifyDocument = async (docId, newStatus) => {
+  const handleChangePasswordSubmit = async (e) => {
+    e.preventDefault();
+    if (!passwordData.currentPassword || !passwordData.newPassword) {
+      toast.error('Please enter both current and new passwords.');
+      return;
+    }
+    if (passwordData.newPassword.length < 6) {
+      toast.error('New password must be at least 6 characters long.');
+      return;
+    }
+    if (passwordData.newPassword !== passwordData.confirmPassword) {
+      toast.error('New password and confirm password do not match.');
+      return;
+    }
+
+    setPassSubmitting(true);
     try {
-      const res = await api.put(`/users/${user._id || user.id}/documents/${docId}/status`, {
-        status: newStatus,
+      const res = await api.post('/auth/change-password', {
+        currentPassword: passwordData.currentPassword,
+        newPassword: passwordData.newPassword,
       });
       if (res.data.success) {
-        toast.success(`Document marked as ${newStatus}`);
-        setDocuments(res.data.documents || []);
+        toast.success(res.data.message || 'Password changed successfully!');
+        setShowPasswordModal(false);
+        setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
       }
     } catch (err) {
-      toast.error('Failed to update document status');
+      toast.error(err.response?.data?.message || 'Failed to update password');
+    } finally {
+      setPassSubmitting(false);
     }
   };
 
-  const avatarOptions = [
-    { name: 'Ananya Sharma (Senior Engineer)', uri: demoAvatars.ananya, role: 'Engineering' },
-    { name: 'Priya Iyer (HR Manager)', uri: demoAvatars.priya, role: 'Human Resources' },
-    { name: 'Rohan Nair (Lead Designer)', uri: demoAvatars.rohan, role: 'UI/UX Design' },
-    { name: 'Arjun Menon (Marketing Lead)', uri: demoAvatars.arjun, role: 'Marketing' },
-    { name: 'Sneha Kulkarni (Finance Lead)', uri: demoAvatars.sneha, role: 'Finance' },
-    { name: 'Karthik Reddy (DevOps Lead)', uri: demoAvatars.karthik, role: 'DevOps & Infra' },
-  ];
+  const handleVerifyDocument = async (docId, newStatus, rejectionReason = '') => {
+    try {
+      const res = await api.put(`/users/${user._id || user.id}/documents/${docId}/status`, {
+        status: newStatus,
+        rejectionReason,
+      });
+      if (res.data.success) {
+        toast.success(res.data.message || `Document marked as ${newStatus}`);
+        setDocuments(res.data.documents || []);
+        setRejectTarget(null);
+        setRejectReason('');
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to update document status');
+    }
+  };
+
+  const submitRejection = (e) => {
+    e.preventDefault();
+    if (!rejectReason.trim()) {
+      toast.error('Please tell the employee what needs correcting.');
+      return;
+    }
+    handleVerifyDocument(rejectTarget._id, 'Rejected', rejectReason);
+  };
 
   const formattedJoiningDate = user?.joiningDate
     ? format(new Date(user.joiningDate), 'MMMM dd, yyyy')
@@ -201,23 +336,22 @@ const ProfilePage = () => {
   return (
     <div className="space-y-6">
       {/* Profile Banner / Header Card */}
-      <div className="relative rounded-3xl bg-gradient-to-r from-brand-950/90 via-slate-900 to-indigo-950/80 text-white border border-slate-800 p-6 sm:p-8 shadow-xl overflow-hidden">
+      <div className="relative rounded-xl bg-slate-900 text-white border border-slate-800 p-6 sm:p-8 shadow-soft overflow-hidden">
         <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-5">
             <div className="relative group">
               <img
                 src={
-                  formData.avatar ||
-                  demoAvatars.generic(user?.name?.slice(0, 2))
+                  formData.avatar || buildInitialsAvatar(user?.name, user?.email)
                 }
                 alt={user?.name}
-                className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl object-cover border-2 border-brand-500/50 shadow-glow"
+                className="w-20 h-20 sm:w-24 sm:h-24 rounded-xl object-cover border-2 border-brand-500/50"
               />
               <button
                 type="button"
                 onClick={() => setShowAvatarModal(true)}
                 title="Change Profile Picture"
-                className="absolute inset-0 bg-slate-950/60 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1 text-[10px] font-bold text-white cursor-pointer"
+                className="absolute inset-0 bg-slate-950/60 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1 text-[10px] font-bold text-white cursor-pointer"
               >
                 <Camera className="w-5 h-5 text-brand-300" />
                 Change
@@ -235,7 +369,7 @@ const ProfilePage = () => {
                   className={`text-xs font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider ${
                     isAdmin
                       ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                      : 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30'
+                      : 'bg-brand-500/20 text-brand-300 border border-brand-500/30'
                   }`}
                 >
                   {user?.role}
@@ -254,7 +388,16 @@ const ProfilePage = () => {
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
+            <button
+              type="button"
+              onClick={() => setShowPasswordModal(true)}
+              className="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-semibold flex items-center gap-2 transition-all border border-slate-700 shadow-sm"
+            >
+              <KeyRound className="w-4 h-4 text-amber-400" />
+              <span>Change Password</span>
+            </button>
+
             <button
               type="button"
               onClick={() => setShowAvatarModal(true)}
@@ -269,7 +412,7 @@ const ProfilePage = () => {
               className={`px-4 py-2.5 rounded-xl font-semibold text-xs flex items-center gap-2 transition-all ${
                 isEditing
                   ? 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                  : 'bg-brand-600 hover:bg-brand-500 text-white shadow-glow'
+                  : 'bg-brand-600 hover:bg-brand-500 text-white'
               }`}
             >
               {isEditing ? (
@@ -288,7 +431,7 @@ const ProfilePage = () => {
 
       {/* Leave Balance Overview Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="p-5 rounded-2xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex items-center justify-between transition-colors">
+        <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex items-center justify-between transition-colors">
           <div>
             <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider">
               Paid Leave Balance
@@ -302,7 +445,7 @@ const ProfilePage = () => {
           </div>
         </div>
 
-        <div className="p-5 rounded-2xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex items-center justify-between transition-colors">
+        <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex items-center justify-between transition-colors">
           <div>
             <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider">
               Sick Leave Balance
@@ -316,17 +459,17 @@ const ProfilePage = () => {
           </div>
         </div>
 
-        <div className="p-5 rounded-2xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex items-center justify-between transition-colors">
+        <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex items-center justify-between transition-colors">
           <div>
             <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider">
               Total Available Leaves
             </span>
-            <div className="text-2xl font-black text-indigo-600 dark:text-indigo-400 mt-1">
+            <div className="text-2xl font-black text-brand-600 dark:text-brand-400 mt-1">
               {(user?.leaveBalance?.paid || 0) + (user?.leaveBalance?.sick || 0)}{' '}
               <span className="text-xs font-normal text-slate-500 dark:text-slate-400">days</span>
             </div>
           </div>
-          <div className="w-10 h-10 rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+          <div className="w-10 h-10 rounded-xl bg-brand-500/10 text-brand-600 dark:text-brand-400 flex items-center justify-center">
             <Sparkles className="w-5 h-5" />
           </div>
         </div>
@@ -336,7 +479,7 @@ const ProfilePage = () => {
       <form onSubmit={handleSave} className="space-y-6">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Personal & Work Details Card */}
-          <div className="p-6 rounded-3xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 space-y-4 shadow-sm dark:shadow-card transition-colors">
+          <div className="p-6 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-4 shadow-sm dark:shadow-card transition-colors">
             <h3 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-3">
               <User className="w-4 h-4 text-brand-600 dark:text-brand-400" />
               General & Work Information
@@ -350,7 +493,7 @@ const ProfilePage = () => {
                   disabled={!isEditing || !isAdmin}
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 text-sm text-slate-900 dark:text-white disabled:opacity-60 disabled:cursor-not-allowed focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                  className="theme-input w-full text-sm"
                 />
               </div>
 
@@ -361,7 +504,7 @@ const ProfilePage = () => {
                   disabled={!isEditing || !isAdmin}
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 text-sm text-slate-900 dark:text-white disabled:opacity-60 disabled:cursor-not-allowed focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                  className="theme-input w-full text-sm"
                 />
               </div>
 
@@ -372,7 +515,7 @@ const ProfilePage = () => {
                   disabled={!isEditing || !isAdmin}
                   value={formData.department}
                   onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 text-sm text-slate-900 dark:text-white disabled:opacity-60 disabled:cursor-not-allowed focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                  className="theme-input w-full text-sm"
                 />
               </div>
 
@@ -383,7 +526,7 @@ const ProfilePage = () => {
                   disabled={!isEditing || !isAdmin}
                   value={formData.designation}
                   onChange={(e) => setFormData({ ...formData, designation: e.target.value })}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 text-sm text-slate-900 dark:text-white disabled:opacity-60 disabled:cursor-not-allowed focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                  className="theme-input w-full text-sm"
                 />
               </div>
 
@@ -395,16 +538,16 @@ const ProfilePage = () => {
                   value={formData.phone}
                   onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                   placeholder="+91 98765 43210"
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 text-sm text-slate-900 dark:text-white disabled:opacity-60 disabled:cursor-not-allowed focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                  className="theme-input w-full text-sm"
                 />
               </div>
             </div>
           </div>
 
           {/* Contact & Emergency Contact Card */}
-          <div className="p-6 rounded-3xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 space-y-4 shadow-sm dark:shadow-card transition-colors">
+          <div className="p-6 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-4 shadow-sm dark:shadow-card transition-colors">
             <h3 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-3">
-              <MapPin className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+              <MapPin className="w-4 h-4 text-brand-600 dark:text-brand-400" />
               Residential & Emergency Contacts
             </h3>
 
@@ -423,7 +566,7 @@ const ProfilePage = () => {
                     })
                   }
                   placeholder="Street / Flat / Colony"
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 text-sm text-slate-900 dark:text-white disabled:opacity-60 disabled:cursor-not-allowed focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                  className="theme-input w-full text-sm"
                 />
               </div>
 
@@ -441,7 +584,7 @@ const ProfilePage = () => {
                       })
                     }
                     placeholder="Bengaluru"
-                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 text-sm text-slate-900 dark:text-white disabled:opacity-60 disabled:cursor-not-allowed focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                    className="theme-input w-full text-sm"
                   />
                 </div>
                 <div>
@@ -457,7 +600,7 @@ const ProfilePage = () => {
                       })
                     }
                     placeholder="Karnataka"
-                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 text-sm text-slate-900 dark:text-white disabled:opacity-60 disabled:cursor-not-allowed focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                    className="theme-input w-full text-sm"
                   />
                 </div>
                 <div>
@@ -473,7 +616,7 @@ const ProfilePage = () => {
                       })
                     }
                     placeholder="560064"
-                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 text-sm text-slate-900 dark:text-white disabled:opacity-60 disabled:cursor-not-allowed focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                    className="theme-input w-full text-sm"
                   />
                 </div>
               </div>
@@ -499,7 +642,7 @@ const ProfilePage = () => {
                       })
                     }
                     placeholder="Full Name"
-                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 text-sm text-slate-900 dark:text-white disabled:opacity-60 disabled:cursor-not-allowed focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                    className="theme-input w-full text-sm"
                   />
                 </div>
                 <div>
@@ -518,7 +661,7 @@ const ProfilePage = () => {
                       })
                     }
                     placeholder="e.g. Spouse, Parent"
-                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 text-sm text-slate-900 dark:text-white disabled:opacity-60 disabled:cursor-not-allowed focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                    className="theme-input w-full text-sm"
                   />
                 </div>
                 <div>
@@ -534,7 +677,7 @@ const ProfilePage = () => {
                       })
                     }
                     placeholder="+91 98765 43210"
-                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 text-sm text-slate-900 dark:text-white disabled:opacity-60 disabled:cursor-not-allowed focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                    className="theme-input w-full text-sm"
                   />
                 </div>
               </div>
@@ -544,7 +687,7 @@ const ProfilePage = () => {
 
         {/* Save Bar */}
         {isEditing && (
-          <div className="flex items-center justify-end gap-3 p-4 rounded-2xl bg-white dark:bg-slate-900 border border-brand-500/30 shadow-md">
+          <div className="flex items-center justify-end gap-3 p-4 rounded-xl bg-white dark:bg-slate-900 border border-brand-500/30 shadow-soft">
             <button
               type="button"
               onClick={() => setIsEditing(false)}
@@ -555,7 +698,7 @@ const ProfilePage = () => {
             <button
               type="submit"
               disabled={loading}
-              className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 text-white text-xs font-semibold shadow-glow flex items-center gap-2 disabled:opacity-50"
+              className="px-6 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-xs font-semibold flex items-center gap-2 disabled:opacity-50"
             >
               {loading ? (
                 <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
@@ -569,7 +712,7 @@ const ProfilePage = () => {
       </form>
 
       {/* EMPLOYEE DOSSIER & DOCUMENTS SECTION */}
-      <div className="p-6 rounded-3xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card space-y-5 transition-colors">
+      <div className="p-6 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card space-y-5 transition-colors">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
           <div>
             <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
@@ -597,7 +740,7 @@ const ProfilePage = () => {
             Loading official documents...
           </div>
         ) : documents.length === 0 ? (
-          <div className="p-8 text-center text-slate-500 dark:text-slate-400 text-xs rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
+          <div className="p-8 text-center text-slate-500 dark:text-slate-400 text-xs rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
             No documents attached yet. Click "Attach Document" to add appointment letter or ID proof.
           </div>
         ) : (
@@ -605,7 +748,7 @@ const ProfilePage = () => {
             {documents.map((doc) => (
               <div
                 key={doc._id}
-                className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3 hover:border-brand-500/50 transition-all shadow-sm"
+                className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3 hover:border-brand-500/50 transition-all shadow-sm"
               >
                 <div className="flex items-center gap-3 min-w-0">
                   <div className="w-10 h-10 rounded-xl bg-brand-500/10 text-brand-600 dark:text-brand-400 flex items-center justify-center shrink-0">
@@ -620,8 +763,19 @@ const ProfilePage = () => {
                         {doc.type}
                       </span>
                       <span>•</span>
-                      <span>{doc.fileSize || '1.2 MB'}</span>
+                      <span>{doc.fileSize || '—'}</span>
                     </div>
+                    {doc.status === 'Rejected' && doc.rejectionReason && (
+                      <div className="mt-1.5 text-[11px] text-rose-600 dark:text-rose-300 bg-rose-500/10 border border-rose-500/20 rounded-lg px-2 py-1">
+                        <span className="font-bold">Reason:</span> {doc.rejectionReason}
+                      </div>
+                    )}
+                    {doc.reviewedByName && doc.status !== 'Pending Verification' && (
+                      <div className="mt-1 text-[10px] text-slate-400 dark:text-slate-500">
+                        {doc.status} by {doc.reviewedByName}
+                        {doc.reviewedAt ? ` on ${new Date(doc.reviewedAt).toLocaleDateString('en-IN')}` : ''}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -646,36 +800,50 @@ const ProfilePage = () => {
                   {isAdmin && (
                     <div className="flex items-center gap-1 border-l border-slate-200 dark:border-slate-800 pl-2">
                       {doc.status !== 'Verified' && (
-                        <button
-                          type="button"
-                          onClick={() => handleVerifyDocument(doc._id, 'Verified')}
-                          title="Approve & Mark Verified"
-                          className="p-1 rounded-lg text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40"
-                        >
-                          <CheckCircle2 className="w-4 h-4" />
-                        </button>
+                        <Tooltip label="Approve and mark verified" side="top">
+                          <button aria-label="Approve and mark verified"
+                            type="button"
+                            onClick={() => handleVerifyDocument(doc._id, 'Verified')}
+                            className="p-1 rounded-lg text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40"
+                          >
+                            <CheckCircle2 className="w-4 h-4" />
+                          </button>
+                        </Tooltip>
                       )}
                       {doc.status !== 'Rejected' && (
-                        <button
-                          type="button"
-                          onClick={() => handleVerifyDocument(doc._id, 'Rejected')}
-                          title="Reject Document"
-                          className="p-1 rounded-lg text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40"
-                        >
-                          <XCircle className="w-4 h-4" />
-                        </button>
+                        <Tooltip label="Reject document" side="top">
+                          <button aria-label="Reject document"
+                            type="button"
+                            onClick={() => { setRejectTarget(doc); setRejectReason(''); }}
+                            className="p-1 rounded-lg text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                          >
+                            <XCircle className="w-4 h-4" />
+                          </button>
+                        </Tooltip>
                       )}
                     </div>
                   )}
 
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteDocument(doc._id)}
-                    title="Delete Document"
-                    className="p-1 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                  <Tooltip label={doc.storedName ? 'Download PDF' : 'No file attached to this legacy record'} side="top">
+                    <button aria-label={doc.storedName ? 'Download PDF' : 'No file attached to this legacy record'}
+                      type="button"
+                      onClick={() => handleDownloadDocument(doc)}
+                      disabled={!doc.storedName}
+                      className="p-1 rounded-lg text-slate-400 hover:text-brand-500 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                    </button>
+                  </Tooltip>
+
+                  <Tooltip label="Delete document" side="top">
+                    <button aria-label="Delete document"
+                      type="button"
+                      onClick={() => handleDeleteDocument(doc._id)}
+                      className="p-1 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </Tooltip>
                 </div>
               </div>
             ))}
@@ -683,54 +851,91 @@ const ProfilePage = () => {
         )}
       </div>
 
-      {/* AVATAR SELECTOR MODAL */}
+      {/* PROFILE PHOTO MODAL — upload a real photo, or use generated initials */}
       {showAvatarModal && (
         <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl space-y-6 my-8 transition-colors">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl max-w-md w-full p-6 sm:p-8 shadow-soft space-y-6 my-8 transition-colors">
             <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-brand-500/10 text-brand-600 dark:text-brand-400 flex items-center justify-center">
                   <Camera className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold text-slate-900 dark:text-white">Choose Profile Picture</h3>
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-white">Profile Photo</h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Select a high-resolution local fictional SVG avatar
+                    Upload a photo, or use your initials
                   </p>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setShowAvatarModal(false)}
-                className="text-slate-400 hover:text-slate-700 dark:hover:text-white p-1 rounded-lg"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <Tooltip label="Close" side="left">
+                <button aria-label="Close"
+                  type="button"
+                  onClick={() => setShowAvatarModal(false)}
+                  className="text-slate-400 hover:text-slate-700 dark:hover:text-white p-1 rounded-lg"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </Tooltip>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3.5">
-              {avatarOptions.map((opt, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => handleSelectAvatar(opt.uri)}
-                  className={`p-3 rounded-2xl border text-center transition-all flex flex-col items-center gap-2 group ${
-                    formData.avatar === opt.uri
-                      ? 'bg-brand-50 dark:bg-brand-950/50 border-brand-500 ring-2 ring-brand-500/30'
-                      : 'bg-slate-50 dark:bg-slate-950/60 border-slate-200 dark:border-slate-800 hover:border-brand-400'
-                  }`}
-                >
-                  <img
-                    src={opt.uri}
-                    alt={opt.name}
-                    className="w-14 h-14 rounded-2xl object-cover border border-slate-200 dark:border-slate-700 group-hover:scale-105 transition-transform"
-                  />
-                  <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200">
-                    {opt.name}
-                  </span>
-                </button>
-              ))}
+            {/* Current photo preview */}
+            <div className="flex flex-col items-center gap-3">
+              <img
+                src={formData.avatar || buildInitialsAvatar(user?.name, user?.email)}
+                alt={user?.name}
+                className="w-24 h-24 rounded-xl object-cover border-2 border-slate-200 dark:border-slate-700 shadow-soft"
+              />
+              <span className="text-[11px] text-slate-500 dark:text-slate-400">Current photo</span>
             </div>
+
+            {/* Choose from gallery */}
+            <label
+              className={`block cursor-pointer p-5 rounded-xl border-2 border-dashed text-center transition-all ${
+                photoUploading
+                  ? 'opacity-50 cursor-wait border-slate-300 dark:border-slate-700'
+                  : 'border-brand-300 dark:border-brand-800 hover:border-brand-500 hover:bg-brand-50/50 dark:hover:bg-brand-950/30'
+              }`}
+            >
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="hidden"
+                disabled={photoUploading}
+                onChange={(e) => {
+                  handlePhotoPicked(e.target.files?.[0]);
+                  e.target.value = '';
+                }}
+              />
+              <ImagePlus className="w-7 h-7 mx-auto text-brand-500 mb-2" />
+              <div className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                {photoUploading ? 'Uploading...' : 'Choose photo from your device'}
+              </div>
+              <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                JPG, PNG or WEBP · up to {MAX_PHOTO_MB} MB
+              </div>
+            </label>
+
+            {/* Or use initials */}
+            <button
+              type="button"
+              onClick={handleUseInitials}
+              disabled={photoUploading}
+              className="w-full p-4 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 hover:border-brand-400 flex items-center gap-3 transition-all disabled:opacity-50"
+            >
+              <img
+                src={buildInitialsAvatar(user?.name, user?.email)}
+                alt="Initials avatar"
+                className="w-11 h-11 rounded-xl shrink-0"
+              />
+              <div className="text-left">
+                <div className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                  Use my initials instead
+                </div>
+                <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Generated from your name — no photo needed
+                </div>
+              </div>
+            </button>
 
             <div className="flex justify-end pt-2 border-t border-slate-200 dark:border-slate-800">
               <button
@@ -748,7 +953,7 @@ const ProfilePage = () => {
       {/* ADD DOCUMENT MODAL */}
       {showAddDocModal && (
         <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-md w-full p-6 sm:p-8 shadow-2xl space-y-5 my-8 transition-colors">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl max-w-md w-full p-6 sm:p-8 shadow-soft space-y-5 my-8 transition-colors">
             <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-brand-500/10 text-brand-600 dark:text-brand-400 flex items-center justify-center">
@@ -759,16 +964,63 @@ const ProfilePage = () => {
                   <p className="text-xs text-slate-500 dark:text-slate-400">Add metadata for employee compliance file</p>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setShowAddDocModal(false)}
-                className="text-slate-400 hover:text-slate-700 dark:hover:text-white p-1 rounded-lg"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <Tooltip label="Close" side="left">
+                <button aria-label="Close"
+                  type="button"
+                  onClick={() => setShowAddDocModal(false)}
+                  className="text-slate-400 hover:text-slate-700 dark:hover:text-white p-1 rounded-lg"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </Tooltip>
             </div>
 
             <form onSubmit={handleAddDocument} className="space-y-4 text-xs">
+              {/* Real file picker — the PDF itself is uploaded and stored */}
+              <div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                  PDF File *
+                </label>
+                <label
+                  className={`block cursor-pointer p-5 rounded-xl border-2 border-dashed text-center transition-all ${
+                    selectedFile
+                      ? 'border-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/20'
+                      : 'border-brand-300 dark:border-brand-800 hover:border-brand-500 hover:bg-brand-50/50 dark:hover:bg-brand-950/30'
+                  }`}
+                >
+                  <input
+                    type="file"
+                    accept="application/pdf,.pdf"
+                    className="hidden"
+                    onChange={(e) => {
+                      handleFilePicked(e.target.files?.[0]);
+                      e.target.value = '';
+                    }}
+                  />
+                  {selectedFile ? (
+                    <>
+                      <FileText className="w-7 h-7 mx-auto text-emerald-600 mb-2" />
+                      <div className="font-bold text-slate-800 dark:text-slate-200 break-all">
+                        {selectedFile.name}
+                      </div>
+                      <div className="text-[11px] text-emerald-700 dark:text-emerald-400 mt-1">
+                        {(selectedFile.size / 1024).toFixed(1)} KB · click to choose a different file
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="w-7 h-7 mx-auto text-brand-500 mb-2" />
+                      <div className="font-bold text-slate-800 dark:text-slate-200">
+                        Choose a PDF from your device
+                      </div>
+                      <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                        PDF only · up to {MAX_DOC_MB} MB
+                      </div>
+                    </>
+                  )}
+                </label>
+              </div>
+
               <div>
                 <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
                   Document Title *
@@ -779,7 +1031,7 @@ const ProfilePage = () => {
                   value={newDoc.name}
                   onChange={(e) => setNewDoc({ ...newDoc, name: e.target.value })}
                   placeholder="e.g. Aadhaar_Government_ID.pdf"
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-brand-500"
+                  className="theme-input w-full"
                 />
               </div>
 
@@ -790,7 +1042,7 @@ const ProfilePage = () => {
                 <select
                   value={newDoc.type}
                   onChange={(e) => setNewDoc({ ...newDoc, type: e.target.value })}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-brand-500"
+                  className="theme-input w-full"
                 >
                   <option value="Offer Letter">Offer / Appointment Letter</option>
                   <option value="Government ID">Government ID (Aadhaar / PAN / Passport)</option>
@@ -801,33 +1053,205 @@ const ProfilePage = () => {
                 </select>
               </div>
 
-              <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                  Simulated File Size
-                </label>
-                <input
-                  type="text"
-                  value={newDoc.fileSize}
-                  onChange={(e) => setNewDoc({ ...newDoc, fileSize: e.target.value })}
-                  placeholder="e.g. 1.5 MB"
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-brand-500"
-                />
-              </div>
-
               <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
                 <button
                   type="button"
-                  onClick={() => setShowAddDocModal(false)}
+                  onClick={() => { setShowAddDocModal(false); setSelectedFile(null); }}
                   className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-6 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-semibold flex items-center gap-2 shadow-glow"
+                  disabled={uploading || !selectedFile}
+                  className="px-6 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-semibold flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Check className="w-4 h-4" />
-                  Attach to Dossier
+                  {uploading ? 'Uploading...' : 'Upload Document'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* REJECT DOCUMENT MODAL — a rejection must say what to fix */}
+      {rejectTarget && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl max-w-md w-full p-6 shadow-soft space-y-5">
+            <div className="flex items-center gap-3 border-b border-slate-200 dark:border-slate-800 pb-4">
+              <div className="w-10 h-10 rounded-xl bg-rose-500/10 text-rose-600 dark:text-rose-400 flex items-center justify-center">
+                <XCircle className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Reject Document</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 break-all">
+                  {rejectTarget.name}
+                </p>
+              </div>
+            </div>
+
+            <form onSubmit={submitRejection} className="space-y-4 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                  Reason for rejection *
+                </label>
+                <textarea
+                  required
+                  rows={3}
+                  value={rejectReason}
+                  onChange={(e) => setRejectReason(e.target.value)}
+                  placeholder="e.g. The scan is blurry — please upload a clearer copy."
+                  className="theme-input w-full"
+                />
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5">
+                  The employee sees this, so they know exactly what to correct.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => { setRejectTarget(null); setRejectReason(''); }}
+                  className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-6 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold flex items-center gap-2"
+                >
+                  <XCircle className="w-4 h-4" />
+                  Reject Document
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Change Password Modal */}
+      {showPasswordModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl max-w-md w-full p-6 sm:p-8 shadow-soft space-y-5 transition-colors">
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+                  <KeyRound className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-white">Update Password</h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Secure your account credentials</p>
+                </div>
+              </div>
+              <Tooltip label="Close" side="left">
+                <button aria-label="Close"
+                  type="button"
+                  onClick={() => setShowPasswordModal(false)}
+                  className="text-slate-400 hover:text-slate-700 dark:hover:text-white p-1 rounded-lg"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </Tooltip>
+            </div>
+
+            <form onSubmit={handleChangePasswordSubmit} className="space-y-4 text-xs">
+              {/* Current Password */}
+              <div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1.5 uppercase tracking-wider">
+                  Current Password *
+                </label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 text-slate-400 absolute inset-y-0 left-3.5 my-auto" />
+                  <input
+                    type={showCurrentPass ? 'text' : 'password'}
+                    required
+                    value={passwordData.currentPassword}
+                    onChange={(e) => setPasswordData({ ...passwordData, currentPassword: e.target.value })}
+                    placeholder="Enter current password"
+                    className="theme-input w-full pl-10 pr-10 text-xs"
+                  />
+                  <Tooltip label={showCurrentPass ? 'Hide password' : 'Show password'} side="left">
+                    <button
+                      type="button"
+                      aria-label={showCurrentPass ? 'Hide password' : 'Show password'}
+                      onClick={() => setShowCurrentPass(!showCurrentPass)}
+                      className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                    >
+                      {showCurrentPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </Tooltip>
+                </div>
+              </div>
+
+              {/* New Password */}
+              <div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1.5 uppercase tracking-wider">
+                  New Password (min 6 characters) *
+                </label>
+                <div className="relative">
+                  <KeyRound className="w-4 h-4 text-slate-400 absolute inset-y-0 left-3.5 my-auto" />
+                  <input
+                    type={showNewPass ? 'text' : 'password'}
+                    required
+                    minLength={6}
+                    value={passwordData.newPassword}
+                    onChange={(e) => setPasswordData({ ...passwordData, newPassword: e.target.value })}
+                    placeholder="Create a new password"
+                    className="theme-input w-full pl-10 pr-10 text-xs"
+                  />
+                  <Tooltip label={showNewPass ? 'Hide password' : 'Show password'} side="left">
+                    <button
+                      type="button"
+                      aria-label={showNewPass ? 'Hide password' : 'Show password'}
+                      onClick={() => setShowNewPass(!showNewPass)}
+                      className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                    >
+                      {showNewPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </Tooltip>
+                </div>
+              </div>
+
+              {/* Confirm New Password */}
+              <div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1.5 uppercase tracking-wider">
+                  Confirm New Password *
+                </label>
+                <div className="relative">
+                  <KeyRound className="w-4 h-4 text-slate-400 absolute inset-y-0 left-3.5 my-auto" />
+                  <input
+                    type="password"
+                    required
+                    value={passwordData.confirmPassword}
+                    onChange={(e) => setPasswordData({ ...passwordData, confirmPassword: e.target.value })}
+                    placeholder="Re-enter new password"
+                    className="theme-input w-full pl-10 pr-4 text-xs"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowPasswordModal(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={passSubmitting}
+                  className="px-6 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-semibold flex items-center gap-2 disabled:opacity-50"
+                >
+                  {passSubmitting ? (
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4" />
+                      <span>Update Password</span>
+                    </>
+                  )}
                 </button>
               </div>
             </form>

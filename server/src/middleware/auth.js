@@ -50,10 +50,13 @@ const protect = async (req, res, next) => {
   }
 };
 
-// Middleware to authorize specific roles (e.g. 'admin')
+// Middleware to authorize specific roles (e.g. 'admin').
+// super_admin implicitly passes every role check — it has all admin power
+// plus the ability to manage other admin accounts (enforced separately).
 const authorize = (...roles) => {
   return (req, res, next) => {
-    if (!req.user || !roles.includes(req.user.role)) {
+    const userRole = req.user && req.user.role;
+    if (!userRole || (userRole !== 'super_admin' && !roles.includes(userRole))) {
       return res.status(403).json({
         success: false,
         message: `Access denied. Role '${req.user ? req.user.role : 'guest'}' is not authorized to access this resource.`,

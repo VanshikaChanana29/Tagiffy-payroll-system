@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
 import { CheckCircle2, AlertCircle, Info, X } from 'lucide-react';
+import Tooltip from '../components/common/Tooltip';
 
 const ToastContext = createContext(null);
 
@@ -35,7 +36,7 @@ export const ToastProvider = ({ children }) => {
         {toasts.map((t) => (
           <div
             key={t.id}
-            className={`pointer-events-auto flex items-start gap-3 p-4 rounded-xl border shadow-xl backdrop-blur-md transition-all duration-300 transform translate-y-0 ${
+            className={`pointer-events-auto flex items-start gap-3 p-4 rounded-xl border shadow-soft backdrop-blur-md transition-all duration-300 transform translate-y-0 ${
               t.type === 'success'
                 ? 'bg-emerald-950/90 border-emerald-500/30 text-emerald-100 shadow-emerald-950/40'
                 : t.type === 'error'
@@ -49,12 +50,14 @@ export const ToastProvider = ({ children }) => {
               {t.type === 'info' && <Info className="w-5 h-5 text-brand-400" />}
             </div>
             <div className="flex-1 text-sm font-medium leading-snug">{t.message}</div>
-            <button
-              onClick={() => removeToast(t.id)}
-              className="shrink-0 text-slate-400 hover:text-white transition-colors"
-            >
-              <X className="w-4 h-4" />
-            </button>
+            <Tooltip label="Dismiss notification" side="left">
+              <button aria-label="Dismiss notification"
+                onClick={() => removeToast(t.id)}
+                className="shrink-0 text-slate-400 hover:text-white transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </Tooltip>
           </div>
         ))}
       </div>

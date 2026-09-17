@@ -4,7 +4,12 @@ const User = require('../models/User');
 const Attendance = require('../models/Attendance');
 const Leave = require('../models/Leave');
 const Salary = require('../models/Salary');
+const Department = require('../models/Department');
+const Designation = require('../models/Designation');
 const demoAvatars = require('./avatars');
+const OrgSettings = require('../models/OrgSettings');
+const { applyAttendanceRules } = require('./attendanceRules');
+const { buildSalaryBreakup } = require('./salaryStructure');
 const { format, subDays } = require('date-fns');
 
 dotenv.config();
@@ -16,9 +21,49 @@ const seedDatabase = async (disconnectWhenDone = true) => {
     await Attendance.deleteMany({});
     await Leave.deleteMany({});
     await Salary.deleteMany({});
+    await Department.deleteMany({});
+    await Designation.deleteMany({});
+    await OrgSettings.deleteMany({});
 
-    console.log('👤 Creating demo Indian Admin and Employee users...');
+    console.log('🏢 Creating department and designation master data...');
+    const departmentDocs = await Department.insertMany([
+      { name: 'Human Resources', code: 'HR', description: 'People operations, hiring, and employee wellbeing' },
+      { name: 'Engineering', code: 'ENG', description: 'Product engineering, platform, and DevOps' },
+      { name: 'Product Design', code: 'DES', description: 'UI/UX design and design systems' },
+      { name: 'Sales & Marketing', code: 'SNM', description: 'Revenue, growth, and brand marketing' },
+      { name: 'Finance', code: 'FIN', description: 'Accounting, payroll, and financial controls' },
+    ]);
+    const deptByName = Object.fromEntries(departmentDocs.map((d) => [d.name, d]));
+
+    await Designation.insertMany([
+      { title: 'HR Manager & People Ops Lead', department: deptByName['Human Resources']._id },
+      { title: 'Engineering Manager', department: deptByName['Engineering']._id },
+      { title: 'Senior Fullstack Engineer', department: deptByName['Engineering']._id },
+      { title: 'DevOps & Cloud Engineer', department: deptByName['Engineering']._id },
+      { title: 'Lead UI/UX Designer', department: deptByName['Product Design']._id },
+      { title: 'Marketing Director', department: deptByName['Sales & Marketing']._id },
+      { title: 'Financial Controller', department: deptByName['Finance']._id },
+    ]);
+
+    console.log('👤 Creating demo Super Admin, Admin, Manager, and Employee users...');
     const usersToCreate = [
+      {
+        employeeId: 'EMP-000',
+        name: 'Owner Account',
+        email: 'owner@dayflow.com',
+        password: 'owner123',
+        role: 'super_admin',
+        department: 'Human Resources',
+        designation: 'Founder',
+        phone: '+91 90000 00000',
+        joiningDate: new Date('2022-01-01'),
+        avatar: demoAvatars.priya,
+        status: 'Active',
+        isVerified: true,
+        documents: [],
+        leaveBalance: { paid: 18, sick: 10, unpaid: 0 },
+        annualCtc: 3000000,
+      },
       {
         employeeId: 'EMP-001',
         name: 'Priya Iyer',
@@ -49,6 +94,7 @@ const seedDatabase = async (disconnectWhenDone = true) => {
           { name: 'MBA_Degree_Certificate.pdf', type: 'Educational Certificate', fileSize: '2.2 MB', status: 'Verified', uploadedAt: new Date('2023-01-12') },
         ],
         leaveBalance: { paid: 18, sick: 10, unpaid: 0 },
+        annualCtc: 1800000,
       },
       {
         employeeId: 'EMP-002',
@@ -81,6 +127,7 @@ const seedDatabase = async (disconnectWhenDone = true) => {
           phone: '+91 98860 23459',
         },
         leaveBalance: { paid: 14, sick: 7, unpaid: 0 },
+        annualCtc: 2200000,
       },
       {
         employeeId: 'EMP-003',
@@ -112,6 +159,7 @@ const seedDatabase = async (disconnectWhenDone = true) => {
           phone: '+91 97410 34560',
         },
         leaveBalance: { paid: 12, sick: 6, unpaid: 0 },
+        annualCtc: 1900000,
       },
       {
         employeeId: 'EMP-004',
@@ -142,6 +190,7 @@ const seedDatabase = async (disconnectWhenDone = true) => {
           phone: '+91 99000 45670',
         },
         leaveBalance: { paid: 15, sick: 8, unpaid: 0 },
+        annualCtc: 2600000,
       },
       {
         employeeId: 'EMP-005',
@@ -172,6 +221,7 @@ const seedDatabase = async (disconnectWhenDone = true) => {
           phone: '+91 98230 56780',
         },
         leaveBalance: { paid: 16, sick: 9, unpaid: 0 },
+        annualCtc: 2000000,
       },
       {
         employeeId: 'EMP-006',
@@ -202,6 +252,37 @@ const seedDatabase = async (disconnectWhenDone = true) => {
           phone: '+91 98490 67899',
         },
         leaveBalance: { paid: 15, sick: 8, unpaid: 0 },
+        annualCtc: 1750000,
+      },
+      {
+        employeeId: 'EMP-007',
+        name: 'Vikram Rao',
+        email: 'vikram@dayflow.com',
+        password: 'manager123',
+        role: 'manager',
+        department: 'Engineering',
+        designation: 'Engineering Manager',
+        phone: '+91 98220 78901',
+        joiningDate: new Date('2022-05-12'),
+        avatar: demoAvatars.karthik,
+        status: 'Active',
+        isVerified: true,
+        documents: [
+          { name: 'Vikram_Rao_Offer_Letter.pdf', type: 'Offer Letter', fileSize: '1.3 MB', status: 'Verified', uploadedAt: new Date('2022-05-12') },
+        ],
+        address: {
+          street: '9 Whitefield Main Road',
+          city: 'Bengaluru',
+          state: 'Karnataka',
+          zip: '560066',
+        },
+        emergencyContact: {
+          name: 'Meera Rao',
+          relation: 'Spouse',
+          phone: '+91 98220 78909',
+        },
+        leaveBalance: { paid: 16, sick: 8, unpaid: 0 },
+        annualCtc: 2800000,
       },
     ];
 
@@ -212,7 +293,32 @@ const seedDatabase = async (disconnectWhenDone = true) => {
       createdUsers.push(userDoc);
     }
 
-    const [priya, ananya, rohan, arjun, sneha, karthik] = createdUsers;
+    const [owner, priya, ananya, rohan, arjun, sneha, karthik, vikram] = createdUsers;
+
+    console.log('🔗 Wiring up reporting-manager hierarchy...');
+    ananya.reportingManager = vikram._id;
+    karthik.reportingManager = vikram._id;
+    vikram.reportingManager = priya._id;
+    rohan.reportingManager = priya._id;
+    arjun.reportingManager = priya._id;
+    sneha.reportingManager = priya._id;
+    await Promise.all([ananya.save(), karthik.save(), vikram.save(), rohan.save(), arjun.save(), sneha.save()]);
+
+    // Give every seeded employee a real salary structure, so the monthly payroll
+    // run has something to work from out of the box.
+    console.log('💼 Building salary structures from each employee CTC...');
+    for (const person of [owner, priya, ananya, rohan, arjun, sneha, karthik, vikram]) {
+      if (!person || !person.annualCtc) continue;
+      const breakup = buildSalaryBreakup(person.annualCtc);
+      delete breakup.totalDeductions;
+      delete breakup.netMonthly;
+      person.salary = {
+        ...breakup,
+        isCustom: false,
+        effectiveFrom: person.joiningDate || new Date(),
+      };
+      await person.save();
+    }
 
     console.log('📅 Generating realistic attendance history for the past 7 days...');
     const attendanceRecords = [];
@@ -228,8 +334,8 @@ const seedDatabase = async (disconnectWhenDone = true) => {
         attendanceRecords.push({
           userId: ananya._id,
           date: dateStr,
-          checkIn: new Date(`${dateStr}T09:12:00.000Z`),
-          checkOut: i === 0 ? null : new Date(`${dateStr}T17:45:00.000Z`),
+          checkIn: new Date(`${dateStr}T09:12:00`),
+          checkOut: i === 0 ? null : new Date(`${dateStr}T17:45:00`),
           totalHours: i === 0 ? 0 : 8.5,
           status: 'Present',
           workMode: i % 2 === 0 ? 'Office' : 'Remote',
@@ -240,8 +346,8 @@ const seedDatabase = async (disconnectWhenDone = true) => {
         attendanceRecords.push({
           userId: rohan._id,
           date: dateStr,
-          checkIn: new Date(`${dateStr}T09:30:00.000Z`),
-          checkOut: i === 0 ? null : new Date(`${dateStr}T18:00:00.000Z`),
+          checkIn: new Date(`${dateStr}T09:30:00`),
+          checkOut: i === 0 ? null : new Date(`${dateStr}T18:00:00`),
           totalHours: i === 0 ? 0 : 8.5,
           status: 'Present',
           workMode: 'Office',
@@ -253,8 +359,8 @@ const seedDatabase = async (disconnectWhenDone = true) => {
           attendanceRecords.push({
             userId: arjun._id,
             date: dateStr,
-            checkIn: new Date(`${dateStr}T09:00:00.000Z`),
-            checkOut: new Date(`${dateStr}T13:30:00.000Z`),
+            checkIn: new Date(`${dateStr}T09:00:00`),
+            checkOut: new Date(`${dateStr}T13:30:00`),
             totalHours: 4.5,
             status: 'Half-day',
             workMode: 'Office',
@@ -264,8 +370,8 @@ const seedDatabase = async (disconnectWhenDone = true) => {
           attendanceRecords.push({
             userId: arjun._id,
             date: dateStr,
-            checkIn: new Date(`${dateStr}T09:05:00.000Z`),
-            checkOut: i === 0 ? null : new Date(`${dateStr}T17:35:00.000Z`),
+            checkIn: new Date(`${dateStr}T09:05:00`),
+            checkOut: i === 0 ? null : new Date(`${dateStr}T17:35:00`),
             totalHours: i === 0 ? 0 : 8.5,
             status: 'Present',
             workMode: 'Office',
@@ -277,8 +383,8 @@ const seedDatabase = async (disconnectWhenDone = true) => {
         attendanceRecords.push({
           userId: sneha._id,
           date: dateStr,
-          checkIn: new Date(`${dateStr}T09:15:00.000Z`),
-          checkOut: i === 0 ? null : new Date(`${dateStr}T17:45:00.000Z`),
+          checkIn: new Date(`${dateStr}T09:15:00`),
+          checkOut: i === 0 ? null : new Date(`${dateStr}T17:45:00`),
           totalHours: i === 0 ? 0 : 8.5,
           status: 'Present',
           workMode: 'Office',
@@ -289,8 +395,8 @@ const seedDatabase = async (disconnectWhenDone = true) => {
         attendanceRecords.push({
           userId: karthik._id,
           date: dateStr,
-          checkIn: new Date(`${dateStr}T09:00:00.000Z`),
-          checkOut: i === 0 ? null : new Date(`${dateStr}T18:15:00.000Z`),
+          checkIn: new Date(`${dateStr}T09:00:00`),
+          checkOut: i === 0 ? null : new Date(`${dateStr}T18:15:00`),
           totalHours: i === 0 ? 0 : 9.2,
           status: 'Present',
           workMode: 'Remote',
@@ -301,8 +407,8 @@ const seedDatabase = async (disconnectWhenDone = true) => {
         attendanceRecords.push({
           userId: priya._id,
           date: dateStr,
-          checkIn: new Date(`${dateStr}T08:50:00.000Z`),
-          checkOut: i === 0 ? null : new Date(`${dateStr}T17:30:00.000Z`),
+          checkIn: new Date(`${dateStr}T08:50:00`),
+          checkOut: i === 0 ? null : new Date(`${dateStr}T17:30:00`),
           totalHours: i === 0 ? 0 : 8.6,
           status: 'Present',
           workMode: 'Office',
@@ -310,6 +416,11 @@ const seedDatabase = async (disconnectWhenDone = true) => {
         });
       }
     }
+
+    // Stamp late marks, early exits and overtime on the seeded history, so a
+    // fresh install starts consistent with what live punches would produce.
+    const seedSettings = await OrgSettings.getSettings();
+    attendanceRecords.forEach((record) => applyAttendanceRules(record, seedSettings));
 
     await Attendance.insertMany(attendanceRecords);
 
@@ -353,113 +464,35 @@ const seedDatabase = async (disconnectWhenDone = true) => {
 
     await Leave.insertMany(leaveRecords);
 
-    console.log('💰 Generating realistic Indian salary structures (INR)...');
-    const salaryRecords = [
-      // Ananya Sharma (Senior Fullstack Developer)
-      {
-        userId: ananya._id,
-        month: 8,
-        year: 2026,
-        basicSalary: 70000,
-        hra: 28000,
-        allowances: 18000,
-        deductions: { tax: 7800, pf: 4200, unpaidLeaveDeduction: 0, other: 0 },
-        grossSalary: 116000,
-        netSalary: 104000,
-        paymentStatus: 'Paid',
-        paymentDate: new Date('2026-08-31'),
-        remarks: 'August 2026 Salary — Regular Disbursement',
-      },
-      {
-        userId: ananya._id,
-        month: 7,
-        year: 2026,
-        basicSalary: 70000,
-        hra: 28000,
-        allowances: 18000,
-        deductions: { tax: 7800, pf: 4200, unpaidLeaveDeduction: 0, other: 0 },
-        grossSalary: 116000,
-        netSalary: 104000,
-        paymentStatus: 'Paid',
-        paymentDate: new Date('2026-07-31'),
-        remarks: 'July 2026 Salary',
-      },
-      // Rohan Nair (Lead UI/UX Designer)
-      {
-        userId: rohan._id,
-        month: 8,
-        year: 2026,
-        basicSalary: 60000,
-        hra: 24000,
-        allowances: 14000,
-        deductions: { tax: 5400, pf: 3600, unpaidLeaveDeduction: 0, other: 0 },
-        grossSalary: 98000,
-        netSalary: 89000,
-        paymentStatus: 'Paid',
-        paymentDate: new Date('2026-08-31'),
-        remarks: 'August 2026 Salary',
-      },
-      // Arjun Menon (Marketing Director)
-      {
-        userId: arjun._id,
-        month: 8,
-        year: 2026,
-        basicSalary: 75000,
-        hra: 30000,
-        allowances: 20000,
-        deductions: { tax: 8500, pf: 4500, unpaidLeaveDeduction: 0, other: 0 },
-        grossSalary: 125000,
-        netSalary: 112000,
-        paymentStatus: 'Paid',
-        paymentDate: new Date('2026-08-31'),
-        remarks: 'August 2026 Salary',
-      },
-      // Sneha Kulkarni (Financial Controller)
-      {
-        userId: sneha._id,
-        month: 8,
-        year: 2026,
-        basicSalary: 65000,
-        hra: 26000,
-        allowances: 15000,
-        deductions: { tax: 6100, pf: 3900, unpaidLeaveDeduction: 0, other: 0 },
-        grossSalary: 106000,
-        netSalary: 96000,
-        paymentStatus: 'Paid',
-        paymentDate: new Date('2026-08-31'),
-        remarks: 'August 2026 Salary',
-      },
-      // Karthik Reddy (DevOps & Cloud Engineer)
-      {
-        userId: karthik._id,
-        month: 8,
-        year: 2026,
-        basicSalary: 68000,
-        hra: 27200,
-        allowances: 16800,
-        deductions: { tax: 6920, pf: 4080, unpaidLeaveDeduction: 0, other: 0 },
-        grossSalary: 112000,
-        netSalary: 101000,
-        paymentStatus: 'Paid',
-        paymentDate: new Date('2026-08-31'),
-        remarks: 'August 2026 Salary',
-      },
-      // Priya Iyer (HR Manager)
-      {
-        userId: priya._id,
-        month: 8,
-        year: 2026,
-        basicSalary: 80000,
-        hra: 32000,
-        allowances: 22000,
-        deductions: { tax: 9200, pf: 4800, unpaidLeaveDeduction: 0, other: 0 },
-        grossSalary: 134000,
-        netSalary: 120000,
-        paymentStatus: 'Paid',
-        paymentDate: new Date('2026-08-31'),
-        remarks: 'August 2026 Salary',
-      },
+    console.log('💰 Generating payslips (monthly pay = CTC / 12)...');
+    const salaryRecords = [];
+    const payslipMonths = [
+      { month: 7, year: 2026, paidOn: new Date('2026-07-31') },
+      { month: 8, year: 2026, paidOn: new Date('2026-08-31') },
     ];
+
+    for (const person of [ananya, rohan, arjun, sneha, karthik, vikram, priya]) {
+      if (!person || !person.salary || !person.salary.monthlyGross) continue;
+      const monthly = person.salary.monthlyGross;
+
+      for (const period of payslipMonths) {
+        salaryRecords.push({
+          userId: person._id,
+          month: period.month,
+          year: period.year,
+          // One earnings line: the monthly figure itself.
+          basicSalary: monthly,
+          hra: 0,
+          allowances: 0,
+          deductions: { tax: 0, pf: 0, unpaidLeaveDeduction: 0, other: 0 },
+          grossSalary: monthly,
+          netSalary: monthly,
+          paymentStatus: 'Paid',
+          paymentDate: period.paidOn,
+          remarks: `Monthly salary — CTC / 12`,
+        });
+      }
+    }
 
     for (const sal of salaryRecords) {
       const salDoc = new Salary(sal);
@@ -469,7 +502,9 @@ const seedDatabase = async (disconnectWhenDone = true) => {
     console.log('✅ Dayflow HRMS Database seeded successfully!');
     console.log('----------------------------------------------------');
     console.log('🔑 DEMO CREDENTIALS:');
+    console.log('🛡️  Super Admin : owner@dayflow.com / owner123 (Owner Account)');
     console.log('👑 Admin/HR : admin@dayflow.com / admin123 (Priya Iyer - HR Manager)');
+    console.log('🧑‍💼 Manager  : vikram@dayflow.com / manager123 (Vikram Rao - Engineering Manager)');
     console.log('🧑 Employee : alex@dayflow.com  / employee123 (Ananya Sharma - Senior Dev)');
     console.log('🧑 Employee : elena@dayflow.com / employee123 (Rohan Nair - Lead UI/UX)');
     console.log('🧑 Employee : marcus@dayflow.com / employee123 (Arjun Menon - Marketing Dir)');

@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
-const demoAvatars = require('../utils/avatars');
+const { buildInitialsAvatar } = require('../utils/initialsAvatar');
 
 // Helper to generate JWT
 const generateToken = (id, role) => {
@@ -19,7 +19,7 @@ const generateToken = (id, role) => {
 // @access  Public
 const register = async (req, res) => {
   try {
-    let { employeeId, name, email, password, role, department, designation } = req.body;
+    let { employeeId, name, email, password, department, designation } = req.body;
 
     if (!employeeId || !email || !password) {
       return res.status(400).json({
@@ -48,16 +48,9 @@ const register = async (req, res) => {
       });
     }
 
-    // Role mapping / validation (HR maps to admin)
-    let assignedRole = 'employee';
-    if (role) {
-      const normalizedRole = role.toLowerCase().trim();
-      if (normalizedRole === 'hr' || normalizedRole === 'admin') {
-        assignedRole = 'admin';
-      } else {
-        assignedRole = 'employee';
-      }
-    }
+    // Public self-registration never grants admin/HR access — that has to be
+    // handed out by a super admin through the employee directory instead.
+    const assignedRole = 'employee';
 
     // Check duplicate employee ID
     const existingEmployeeId = await User.findOne({ employeeId });
@@ -107,9 +100,9 @@ const register = async (req, res) => {
       email,
       password,
       role: assignedRole,
-      department: department || (assignedRole === 'admin' ? 'Human Resources' : 'Engineering'),
-      designation: designation || (assignedRole === 'admin' ? 'HR Specialist' : 'Associate Engineer'),
-      avatar: demoAvatars.generic(fullName.slice(0, 2).toUpperCase()),
+      department: department || 'Engineering',
+      designation: designation || 'Associate Engineer',
+      avatar: buildInitialsAvatar(fullName, email),
       status: 'Active',
       isVerified: false,
       verificationToken,
@@ -333,10 +326,65 @@ const logout = async (req, res) => {
   });
 };
 
+// @desc    Change user password
+// @route   POST /api/auth/change-password
+// @access  Private
+const changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide both current and new passwords.',
+      });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'New password must be at least 6 characters long.',
+      });
+    }
+
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User profile not found.',
+      });
+    }
+
+    const isMatch = await user.comparePassword(currentPassword);
+    if (!isMatch) {
+      return res.status(400).json({
+        success: false,
+        message: 'Current password is incorrect.',
+      });
+    }
+
+    user.password = newPassword;
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Password changed successfully! Please use your new password for future sign-ins.',
+    });
+  } catch (error) {
+    console.error('Change Password Error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update password.',
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   register,
   verifyEmail,
   login,
   getMe,
   logout,
+  changePassword,
 };

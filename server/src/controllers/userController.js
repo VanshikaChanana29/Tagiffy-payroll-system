@@ -1,4 +1,55 @@
+const fs = require('fs');
+const path = require('path');
 const User = require('../models/User');
+const Department = require('../models/Department');
+const Designation = require('../models/Designation');
+const {
+  UPLOAD_DIR,
+  formatFileSize,
+  isRealPdf,
+  AVATAR_DIR,
+  isRealImage,
+} = require('../middleware/upload');
+const { buildInitialsAvatar } = require('../utils/initialsAvatar');
+const OrgSettings = require('../models/OrgSettings');
+const { buildSalaryBreakup } = require('../utils/salaryStructure');
+const { getVisibleUserIds, getDirectReports } = require('../utils/teamScope');
+const { parseEmployeeSheet, buildEmployeeTemplateWorkbook } = require('../utils/bulkEmployeeImport');
+const { isAdminRole, isSuperAdmin } = require('../utils/roles');
+
+// Documents belong to the employee or to HR — nobody else, ever.
+const canAccessDocuments = (req, employeeId) =>
+  req.user._id.toString() === employeeId || isAdminRole(req.user.role);
+
+// Remove the file backing a document, ignoring a file that is already gone.
+const removeStoredFile = (storedName) => {
+  if (!storedName) return;
+  try {
+    fs.unlinkSync(path.join(UPLOAD_DIR, storedName));
+  } catch (err) {
+    if (err.code !== 'ENOENT') {
+      console.error(`Failed to remove stored file ${storedName}: ${err.message}`);
+    }
+  }
+};
+
+// Validate that department/designation reference existing master data records.
+// Returns an error message string if invalid, or null if valid/not provided.
+const validateDeptDesignation = async (department, designation) => {
+  if (department) {
+    const dept = await Department.findOne({ name: new RegExp(`^${department.trim()}$`, 'i') });
+    if (!dept) {
+      return `Department '${department}' does not exist. Please create it first in Org Settings.`;
+    }
+  }
+  if (designation) {
+    const desig = await Designation.findOne({ title: new RegExp(`^${designation.trim()}$`, 'i') });
+    if (!desig) {
+      return `Designation '${designation}' does not exist. Please create it first in Org Settings.`;
+    }
+  }
+  return null;
+};
 
 // @desc    Get all employees with search, filter, and pagination
 // @route   GET /api/users
@@ -36,8 +87,15 @@ const getAllEmployees = async (req, res) => {
       ];
     }
 
+    // A manager's directory is their own team.
+    const visibleIds = await getVisibleUserIds(req.user);
+    if (visibleIds !== null) {
+      query._id = { $in: visibleIds };
+    }
+
     const employees = await User.find(query)
       .select('-password')
+      .populate('reportingManager', 'name employeeId email')
       .sort({ createdAt: -1 });
 
     const total = await User.countDocuments(query);
@@ -62,6 +120,50 @@ const getAllEmployees = async (req, res) => {
   }
 };
 
+// @desc    List employees eligible to be a reporting manager (admins & managers)
+// @route   GET /api/users/managers
+// @access  Private (Admin only)
+const getEligibleManagers = async (req, res) => {
+  try {
+    const managers = await User.find({
+      role: { $in: ['super_admin', 'admin', 'manager'] },
+      status: 'Active',
+    })
+      .select('name employeeId email role designation')
+      .sort({ name: 1 });
+
+    res.status(200).json({ success: true, managers });
+  } catch (error) {
+    console.error('Get Eligible Managers Error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve eligible managers',
+      error: error.message,
+    });
+  }
+};
+
+// @desc    The people reporting to the signed-in manager
+// @route   GET /api/users/my-team
+// @access  Private (Manager or Admin)
+const getMyTeam = async (req, res) => {
+  try {
+    const team = await getDirectReports(req.user._id);
+    res.status(200).json({
+      success: true,
+      count: team.length,
+      team,
+    });
+  } catch (error) {
+    console.error('Get My Team Error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve your team',
+      error: error.message,
+    });
+  }
+};
+
 // @desc    Get single employee details
 // @route   GET /api/users/:id
 // @access  Private (Admin or Self)
@@ -70,7 +172,7 @@ const getEmployeeById = async (req, res) => {
     const { id } = req.params;
 
     // Non-admins can only view their own profile or public team info
-    if (req.user.role !== 'admin' && req.user._id.toString() !== id) {
+    if (!isAdminRole(req.user.role) && req.user._id.toString() !== id) {
       // Allow viewing basic profile of colleagues
       const colleague = await User.findById(id).select(
         'name email employeeId department designation avatar status'
@@ -81,7 +183,9 @@ const getEmployeeById = async (req, res) => {
       return res.status(200).json({ success: true, employee: colleague });
     }
 
-    const employee = await User.findById(id).select('-password');
+    const employee = await User.findById(id)
+      .select('-password')
+      .populate('reportingManager', 'name employeeId email');
     if (!employee) {
       return res.status(404).json({ success: false, message: 'Employee not found' });
     }
@@ -112,6 +216,7 @@ const createEmployee = async (req, res) => {
       role = 'employee',
       department,
       designation,
+      reportingManager,
       phone,
       joiningDate,
       avatar,
@@ -125,6 +230,20 @@ const createEmployee = async (req, res) => {
         success: false,
         message: 'Please provide name, email, department, and designation',
       });
+    }
+
+    // Only a super admin may hand out admin-level access; HR admins can
+    // onboard everyone else but not create peers who could manage them.
+    if (isAdminRole(role) && !isSuperAdmin(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Only a super admin can create admin accounts.',
+      });
+    }
+
+    const deptDesigError = await validateDeptDesignation(department, designation);
+    if (deptDesigError) {
+      return res.status(400).json({ success: false, message: deptDesigError });
     }
 
     // Check if email already exists
@@ -148,7 +267,6 @@ const createEmployee = async (req, res) => {
 
     // Default password if none provided
     const userPassword = password || 'employee123';
-    const avatars = require('../utils/avatars');
 
     const newEmployee = new User({
       employeeId,
@@ -158,9 +276,10 @@ const createEmployee = async (req, res) => {
       role: role || 'employee',
       department,
       designation,
+      reportingManager: reportingManager || null,
       phone: phone || '',
       joiningDate: joiningDate ? new Date(joiningDate) : new Date(),
-      avatar: avatar || avatars.generic(name.slice(0, 2).toUpperCase()),
+      avatar: avatar || buildInitialsAvatar(name, email),
       status: 'Active',
       isVerified: true,
       documents: [
@@ -176,6 +295,19 @@ const createEmployee = async (req, res) => {
       emergencyContact: emergencyContact || {},
       leaveBalance: leaveBalance || { paid: 14, sick: 7, unpaid: 0 },
     });
+
+    // A new hire is payroll-ready the moment they are created, instead of
+    // waiting for someone to type a payslip by hand at month end.
+    if (req.body.annualCtc) {
+      const breakup = buildSalaryBreakup(Number(req.body.annualCtc));
+      delete breakup.totalDeductions;
+      delete breakup.netMonthly;
+      newEmployee.salary = {
+        ...breakup,
+        isCustom: false,
+        effectiveFrom: newEmployee.joiningDate || new Date(),
+      };
+    }
 
     await newEmployee.save();
 
@@ -194,6 +326,224 @@ const createEmployee = async (req, res) => {
   }
 };
 
+// @desc    Download a fillable .xlsx template for bulk employee onboarding
+// @route   GET /api/users/bulk-upload/template
+// @access  Private (Admin only)
+const downloadEmployeeTemplate = async (req, res) => {
+  try {
+    const buffer = buildEmployeeTemplateWorkbook();
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    );
+    res.setHeader('Content-Disposition', 'attachment; filename="employee_upload_template.xlsx"');
+    res.send(buffer);
+  } catch (error) {
+    console.error('Download Employee Template Error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to generate the template file',
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Bulk-onboard employees from an uploaded Excel/CSV sheet
+// @route   POST /api/users/bulk-upload
+// @access  Private (Admin only)
+//
+// Every row is validated and saved independently: a bad row is reported back
+// with its sheet row number and skipped, it never aborts the rest of the batch.
+const bulkUploadEmployees = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please choose an Excel (.xlsx/.xls) or .csv file to upload.',
+      });
+    }
+
+    let parsed;
+    try {
+      parsed = parseEmployeeSheet(req.file.buffer);
+    } catch (err) {
+      return res.status(400).json({
+        success: false,
+        message: 'Could not read that file. Please upload a valid .xlsx, .xls, or .csv file.',
+      });
+    }
+
+    const { rows, unrecognizedHeaders } = parsed;
+    if (rows.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No employee rows were found in that file.',
+      });
+    }
+
+    // Prefetch reference data once instead of querying per row.
+    const [departments, designations, existingUsers] = await Promise.all([
+      Department.find().select('name'),
+      Designation.find().select('title'),
+      User.find().select('email employeeId'),
+    ]);
+
+    const departmentByLower = new Map(departments.map((d) => [d.name.toLowerCase(), d.name]));
+    const designationByLower = new Map(designations.map((d) => [d.title.toLowerCase(), d.title]));
+    const emailToUser = new Map(
+      existingUsers.map((u) => [u.email.toLowerCase(), { _id: u._id }])
+    );
+    const usedEmployeeIds = new Set(existingUsers.map((u) => u.employeeId));
+    const seenEmailsInFile = new Set();
+
+    // Numeric part of existing EMP-### ids, so newly generated ids continue
+    // the sequence instead of colliding with what's already there.
+    let nextEmployeeIdNum =
+      existingUsers.reduce((max, u) => {
+        const match = /^EMP-(\d+)$/i.exec(u.employeeId || '');
+        return match ? Math.max(max, parseInt(match[1], 10)) : max;
+      }, 0) + 1;
+
+    const allocateEmployeeId = () => {
+      let candidate;
+      do {
+        candidate = `EMP-${String(nextEmployeeIdNum).padStart(3, '0')}`;
+        nextEmployeeIdNum++;
+      } while (usedEmployeeIds.has(candidate));
+      usedEmployeeIds.add(candidate);
+      return candidate;
+    };
+
+    const created = [];
+    const failed = [];
+    const VALID_ROLES = ['admin', 'manager', 'employee'];
+
+    for (const { rowNumber, data } of rows) {
+      const name = (data.name || '').toString().trim();
+      const email = (data.email || '').toString().trim().toLowerCase();
+      const department = (data.department || '').toString().trim();
+      const designation = (data.designation || '').toString().trim();
+
+      const fail = (message) => failed.push({ row: rowNumber, name, email, reason: message });
+
+      if (!name && !email && !department && !designation) continue; // fully blank row
+
+      if (!name || !email || !department || !designation) {
+        fail('Name, Email, Department, and Designation are all required.');
+        continue;
+      }
+
+      if (!/^\S+@\S+\.\S+$/.test(email)) {
+        fail(`'${email}' is not a valid email address.`);
+        continue;
+      }
+
+      if (seenEmailsInFile.has(email)) {
+        fail(`Duplicate email '${email}' appears more than once in this file.`);
+        continue;
+      }
+      if (emailToUser.has(email)) {
+        fail(`An employee with email '${email}' already exists.`);
+        continue;
+      }
+
+      const canonicalDept = departmentByLower.get(department.toLowerCase());
+      if (!canonicalDept) {
+        fail(`Department '${department}' does not exist. Please create it first in Org Settings.`);
+        continue;
+      }
+      const canonicalDesig = designationByLower.get(designation.toLowerCase());
+      if (!canonicalDesig) {
+        fail(`Designation '${designation}' does not exist. Please create it first in Org Settings.`);
+        continue;
+      }
+
+      let role = (data.role || 'employee').toString().trim().toLowerCase();
+      if (!VALID_ROLES.includes(role)) {
+        fail(`Role '${data.role}' is invalid. Use admin, manager, or employee.`);
+        continue;
+      }
+      if (isAdminRole(role) && !isSuperAdmin(req.user.role)) {
+        fail('Only a super admin can bulk-create admin accounts.');
+        continue;
+      }
+
+      let reportingManager = null;
+      const managerEmail = (data.reportingManagerEmail || '').toString().trim().toLowerCase();
+      if (managerEmail) {
+        const manager = emailToUser.get(managerEmail);
+        if (!manager) {
+          fail(`Reporting manager email '${managerEmail}' does not match any existing employee.`);
+          continue;
+        }
+        reportingManager = manager._id;
+      }
+
+      const joiningDate = data.joiningDate ? new Date(data.joiningDate) : new Date();
+      if (Number.isNaN(joiningDate.getTime())) {
+        fail(`Joining date '${data.joiningDate}' is not a valid date.`);
+        continue;
+      }
+
+      const employeeId = allocateEmployeeId();
+      const password = (data.password || '').toString().trim() || 'employee123';
+
+      try {
+        const newEmployee = new User({
+          employeeId,
+          name,
+          email,
+          password,
+          role,
+          department: canonicalDept,
+          designation: canonicalDesig,
+          reportingManager,
+          phone: (data.phone || '').toString().trim(),
+          joiningDate,
+          avatar: buildInitialsAvatar(name, email),
+          status: 'Active',
+          isVerified: true,
+          leaveBalance: { paid: 14, sick: 7, unpaid: 0 },
+        });
+
+        const annualCtc = Number(data.annualCtc);
+        if (annualCtc > 0) {
+          const breakup = buildSalaryBreakup(annualCtc);
+          delete breakup.totalDeductions;
+          delete breakup.netMonthly;
+          newEmployee.salary = { ...breakup, isCustom: false, effectiveFrom: joiningDate };
+        }
+
+        await newEmployee.save();
+
+        emailToUser.set(email, { _id: newEmployee._id });
+        seenEmailsInFile.add(email);
+        created.push({ row: rowNumber, name, email, employeeId });
+      } catch (err) {
+        fail(err.message || 'Failed to create this employee.');
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `${created.length} of ${rows.length} employee row(s) onboarded successfully.`,
+      totalRows: rows.length,
+      createdCount: created.length,
+      failedCount: failed.length,
+      created,
+      failed,
+      unrecognizedHeaders,
+    });
+  } catch (error) {
+    console.error('Bulk Upload Employees Error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to process the uploaded file',
+      error: error.message,
+    });
+  }
+};
+
 // @desc    Update employee profile
 // @route   PUT /api/users/:id
 // @access  Private (Admin for all fields, Employee for personal info)
@@ -201,7 +551,7 @@ const updateEmployee = async (req, res) => {
   try {
     const { id } = req.params;
     const isSelf = req.user._id.toString() === id;
-    const isAdmin = req.user.role === 'admin';
+    const isAdmin = isAdminRole(req.user.role);
 
     if (!isSelf && !isAdmin) {
       return res.status(403).json({
@@ -225,14 +575,23 @@ const updateEmployee = async (req, res) => {
         employee.emergencyContact = { ...employee.emergencyContact, ...emergencyContact };
     }
 
-    // Admin can update everything
+    // Admin can update everything, except another admin's account — that's
+    // reserved for a super admin, so HR admins can't manage their peers.
     if (isAdmin) {
+      if (isAdminRole(employee.role) && !isSelf && !isSuperAdmin(req.user.role)) {
+        return res.status(403).json({
+          success: false,
+          message: 'Only a super admin can manage another admin account.',
+        });
+      }
+
       const {
         name,
         email,
         role,
         department,
         designation,
+        reportingManager,
         phone,
         status,
         avatar,
@@ -242,11 +601,35 @@ const updateEmployee = async (req, res) => {
         joiningDate,
       } = req.body;
 
+      if (department || designation) {
+        const deptDesigError = await validateDeptDesignation(department, designation);
+        if (deptDesigError) {
+          return res.status(400).json({ success: false, message: deptDesigError });
+        }
+      }
+
+      if (reportingManager !== undefined && reportingManager === id) {
+        return res.status(400).json({
+          success: false,
+          message: 'An employee cannot report to themselves',
+        });
+      }
+
+      if (role && role !== employee.role) {
+        if (isAdminRole(role) && !isSuperAdmin(req.user.role)) {
+          return res.status(403).json({
+            success: false,
+            message: 'Only a super admin can grant admin access.',
+          });
+        }
+        employee.role = role;
+      }
+
       if (name) employee.name = name;
       if (email) employee.email = email.toLowerCase().trim();
-      if (role) employee.role = role;
       if (department) employee.department = department;
       if (designation) employee.designation = designation;
+      if (reportingManager !== undefined) employee.reportingManager = reportingManager || null;
       if (phone !== undefined) employee.phone = phone;
       if (status) employee.status = status;
       if (avatar) employee.avatar = avatar;
@@ -294,6 +677,13 @@ const deleteEmployee = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Employee not found' });
     }
 
+    if (isAdminRole(employee.role) && !isSuperAdmin(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Only a super admin can deactivate an admin account.',
+      });
+    }
+
     // Soft delete / deactivate by default
     employee.status = 'Inactive';
     await employee.save();
@@ -319,7 +709,7 @@ const getUserDocuments = async (req, res) => {
   try {
     const { id } = req.params;
     const isSelf = req.user._id.toString() === id;
-    const isAdmin = req.user.role === 'admin';
+    const isAdmin = isAdminRole(req.user.role);
 
     if (!isSelf && !isAdmin) {
       return res.status(403).json({
@@ -347,40 +737,64 @@ const getUserDocuments = async (req, res) => {
   }
 };
 
-// @desc    Add employee document
+// @desc    Upload an employee document (PDF file)
 // @route   POST /api/users/:id/documents
 // @access  Private (Self or Admin)
 const addUserDocument = async (req, res) => {
   try {
     const { id } = req.params;
-    const isSelf = req.user._id.toString() === id;
-    const isAdmin = req.user.role === 'admin';
 
-    if (!isSelf && !isAdmin) {
+    if (!canAccessDocuments(req, id)) {
+      if (req.file) removeStoredFile(req.file.filename);
       return res.status(403).json({
         success: false,
         message: 'Forbidden. You can only add documents to your own profile.',
       });
     }
 
-    const { name, type, fileSize } = req.body;
-    if (!name || !type) {
+    if (!req.file) {
       return res.status(400).json({
         success: false,
-        message: 'Please provide document name and type',
+        message: 'Please choose a PDF file to upload.',
+      });
+    }
+
+    const { name, type } = req.body;
+    if (!type) {
+      removeStoredFile(req.file.filename);
+      return res.status(400).json({
+        success: false,
+        message: 'Please select a document type',
+      });
+    }
+
+    // Confirm the bytes really are a PDF, not just a file named ".pdf".
+    if (!isRealPdf(path.join(UPLOAD_DIR, req.file.filename))) {
+      removeStoredFile(req.file.filename);
+      return res.status(400).json({
+        success: false,
+        message: 'That file is not a valid PDF. Please upload a real PDF document.',
       });
     }
 
     const employee = await User.findById(id);
     if (!employee) {
+      removeStoredFile(req.file.filename);
       return res.status(404).json({ success: false, message: 'Employee not found' });
     }
 
+    // Every upload starts unverified, including HR's own, so that verification is
+    // always a deliberate, recorded action rather than a side effect of uploading.
     const newDoc = {
-      name: name.trim(),
+      name: (name && name.trim()) || req.file.originalname,
       type: type.trim(),
-      fileSize: fileSize || '1.2 MB',
-      status: isAdmin ? 'Verified' : 'Pending Verification',
+      storedName: req.file.filename,
+      originalName: req.file.originalname,
+      mimeType: req.file.mimetype,
+      fileSizeBytes: req.file.size,
+      fileSize: formatFileSize(req.file.size),
+      status: 'Pending Verification',
+      uploadedBy: req.user._id,
       uploadedAt: new Date(),
     };
 
@@ -390,30 +804,80 @@ const addUserDocument = async (req, res) => {
 
     res.status(201).json({
       success: true,
-      message: 'Document added successfully',
+      message: `${newDoc.name} uploaded successfully (${newDoc.fileSize}). Awaiting HR verification.`,
       document: employee.documents[employee.documents.length - 1],
       documents: employee.documents,
     });
   } catch (error) {
     console.error('Add Document Error:', error);
+    if (req.file) removeStoredFile(req.file.filename);
     res.status(500).json({
       success: false,
-      message: 'Failed to add document',
+      message: 'Failed to upload document',
       error: error.message,
     });
   }
 };
 
-// @desc    Delete employee document
+// @desc    Download an employee document
+// @route   GET /api/users/:id/documents/:docId/download
+// @access  Private (Self or Admin)
+const downloadUserDocument = async (req, res) => {
+  try {
+    const { id, docId } = req.params;
+
+    if (!canAccessDocuments(req, id)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Forbidden. You can only download your own documents.',
+      });
+    }
+
+    const employee = await User.findById(id);
+    if (!employee) {
+      return res.status(404).json({ success: false, message: 'Employee not found' });
+    }
+
+    const doc = (employee.documents || []).find((d) => d._id.toString() === docId);
+    if (!doc) {
+      return res.status(404).json({ success: false, message: 'Document not found' });
+    }
+
+    if (!doc.storedName) {
+      return res.status(404).json({
+        success: false,
+        message: 'This is a legacy record with no file attached. Please re-upload the document.',
+      });
+    }
+
+    const filePath = path.join(UPLOAD_DIR, doc.storedName);
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({
+        success: false,
+        message: 'The stored file is missing from the server.',
+      });
+    }
+
+    res.setHeader('Content-Type', doc.mimeType || 'application/pdf');
+    res.download(filePath, doc.originalName || doc.name);
+  } catch (error) {
+    console.error('Download Document Error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to download document',
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Delete employee document (and its stored file)
 // @route   DELETE /api/users/:id/documents/:docId
 // @access  Private (Self or Admin)
 const deleteUserDocument = async (req, res) => {
   try {
     const { id, docId } = req.params;
-    const isSelf = req.user._id.toString() === id;
-    const isAdmin = req.user.role === 'admin';
 
-    if (!isSelf && !isAdmin) {
+    if (!canAccessDocuments(req, id)) {
       return res.status(403).json({
         success: false,
         message: 'Forbidden. You can only manage your own documents.',
@@ -425,9 +889,15 @@ const deleteUserDocument = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Employee not found' });
     }
 
-    employee.documents = (employee.documents || []).filter(
-      (d) => d._id.toString() !== docId
-    );
+    const doc = (employee.documents || []).find((d) => d._id.toString() === docId);
+    if (!doc) {
+      return res.status(404).json({ success: false, message: 'Document not found' });
+    }
+
+    // Drop the file too, so deleted documents do not linger on disk.
+    removeStoredFile(doc.storedName);
+
+    employee.documents = employee.documents.filter((d) => d._id.toString() !== docId);
     await employee.save();
 
     res.status(200).json({
@@ -445,18 +915,26 @@ const deleteUserDocument = async (req, res) => {
   }
 };
 
-// @desc    Verify or update document status (Admin only)
+// @desc    Verify or reject a document (Admin only)
 // @route   PUT /api/users/:id/documents/:docId/status
 // @access  Private (Admin only)
 const verifyUserDocument = async (req, res) => {
   try {
     const { id, docId } = req.params;
-    const { status } = req.body;
+    const { status, rejectionReason = '' } = req.body;
 
     if (!['Verified', 'Pending Verification', 'Rejected'].includes(status)) {
       return res.status(400).json({
         success: false,
         message: 'Invalid document status',
+      });
+    }
+
+    // A rejection the employee cannot act on is useless, so a reason is required.
+    if (status === 'Rejected' && !rejectionReason.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide a reason so the employee knows what to correct.',
       });
     }
 
@@ -471,11 +949,24 @@ const verifyUserDocument = async (req, res) => {
     }
 
     doc.status = status;
+    doc.rejectionReason = status === 'Rejected' ? rejectionReason.trim() : '';
+
+    // Record who made the call, so verification is auditable.
+    if (status === 'Pending Verification') {
+      doc.reviewedBy = null;
+      doc.reviewedByName = '';
+      doc.reviewedAt = null;
+    } else {
+      doc.reviewedBy = req.user._id;
+      doc.reviewedByName = req.user.name;
+      doc.reviewedAt = new Date();
+    }
+
     await employee.save();
 
     res.status(200).json({
       success: true,
-      message: `Document status updated to ${status}`,
+      message: `Document marked as ${status} by ${req.user.name}`,
       document: doc,
       documents: employee.documents,
     });
@@ -489,14 +980,324 @@ const verifyUserDocument = async (req, res) => {
   }
 };
 
+// @desc    Upload a profile photo
+// @route   POST /api/users/:id/avatar
+// @access  Private (Self or Admin)
+const uploadUserAvatar = async (req, res) => {
+  const removeUploaded = () => {
+    if (!req.file) return;
+    try {
+      fs.unlinkSync(path.join(AVATAR_DIR, req.file.filename));
+    } catch (err) {
+      if (err.code !== 'ENOENT') console.error(`Avatar cleanup failed: ${err.message}`);
+    }
+  };
+
+  try {
+    const { id } = req.params;
+    const isSelf = req.user._id.toString() === id;
+    const isAdmin = isAdminRole(req.user.role);
+
+    if (!isSelf && !isAdmin) {
+      removeUploaded();
+      return res.status(403).json({
+        success: false,
+        message: 'You can only change your own profile photo.',
+      });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please choose an image to upload.',
+      });
+    }
+
+    if (!isRealImage(path.join(AVATAR_DIR, req.file.filename))) {
+      removeUploaded();
+      return res.status(400).json({
+        success: false,
+        message: 'That file is not a valid image. Please choose a JPG, PNG, or WEBP photo.',
+      });
+    }
+
+    const employee = await User.findById(id);
+    if (!employee) {
+      removeUploaded();
+      return res.status(404).json({ success: false, message: 'Employee not found' });
+    }
+
+    // Delete the previous uploaded photo so old files do not pile up. Generated
+    // initials avatars are data URIs, so there is nothing on disk to remove.
+    if (employee.avatarFile) {
+      try {
+        fs.unlinkSync(path.join(AVATAR_DIR, employee.avatarFile));
+      } catch (err) {
+        if (err.code !== 'ENOENT') console.error(`Old avatar cleanup failed: ${err.message}`);
+      }
+    }
+
+    employee.avatarFile = req.file.filename;
+    employee.avatar = `/api/files/avatars/${req.file.filename}`;
+    await employee.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Profile photo updated successfully',
+      avatar: employee.avatar,
+      employee,
+    });
+  } catch (error) {
+    console.error('Upload Avatar Error:', error);
+    removeUploaded();
+    res.status(500).json({
+      success: false,
+      message: 'Failed to upload profile photo',
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Reset the profile photo back to generated initials
+// @route   DELETE /api/users/:id/avatar
+// @access  Private (Self or Admin)
+const resetUserAvatar = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const isSelf = req.user._id.toString() === id;
+    const isAdmin = isAdminRole(req.user.role);
+
+    if (!isSelf && !isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: 'You can only change your own profile photo.',
+      });
+    }
+
+    const employee = await User.findById(id);
+    if (!employee) {
+      return res.status(404).json({ success: false, message: 'Employee not found' });
+    }
+
+    if (employee.avatarFile) {
+      try {
+        fs.unlinkSync(path.join(AVATAR_DIR, employee.avatarFile));
+      } catch (err) {
+        if (err.code !== 'ENOENT') console.error(`Avatar cleanup failed: ${err.message}`);
+      }
+    }
+
+    employee.avatarFile = '';
+    employee.avatar = buildInitialsAvatar(employee.name, employee.email);
+    await employee.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Profile photo reset to your initials',
+      avatar: employee.avatar,
+      employee,
+    });
+  } catch (error) {
+    console.error('Reset Avatar Error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to reset profile photo',
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Preview the monthly breakup for a CTC without saving anything
+// @route   GET /api/users/salary-preview?annualCtc=1200000
+// @access  Private (Admin only)
+const previewSalaryBreakup = async (req, res) => {
+  try {
+    const annualCtc = Number(req.query.annualCtc);
+    if (!annualCtc || annualCtc <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide a positive annual CTC.',
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      breakup: buildSalaryBreakup(annualCtc),
+    });
+  } catch (error) {
+    console.error('Salary Preview Error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to build salary preview',
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Set or revise an employee's salary structure
+// @route   PUT /api/users/:id/salary
+// @access  Private (Admin only)
+//
+// A revision is never an in-place edit: the outgoing structure is pushed to
+// history first, so payslips already issued remain explainable.
+const updateEmployeeSalary = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { annualCtc, effectiveFrom, note = '', components } = req.body;
+
+    const employee = await User.findById(id);
+    if (!employee) {
+      return res.status(404).json({ success: false, message: 'Employee not found' });
+    }
+
+    let next;
+
+    if (components && Object.keys(components).length > 0) {
+      // HR typed the components by hand; trust them and derive the totals.
+      const basic = Number(components.basic) || 0;
+      const hra = Number(components.hra) || 0;
+      const specialAllowance = Number(components.specialAllowance) || 0;
+      const monthlyGross = basic + hra + specialAllowance;
+
+      if (monthlyGross <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Salary components must add up to more than zero.',
+        });
+      }
+
+      next = {
+        annualCtc: Number(components.annualCtc) || Math.round(monthlyGross * 12),
+        monthlyGross,
+        basic,
+        hra,
+        specialAllowance,
+        pf: Number(components.pf) || 0,
+        professionalTax: Number(components.professionalTax) || 0,
+        otherDeductions: Number(components.otherDeductions) || 0,
+        isCustom: true,
+      };
+    } else {
+      const ctc = Number(annualCtc);
+      if (!ctc || ctc <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Please provide a positive annual CTC.',
+        });
+      }
+      next = { ...buildSalaryBreakup(ctc), isCustom: false };
+      delete next.totalDeductions;
+      delete next.netMonthly;
+    }
+
+    next.effectiveFrom = effectiveFrom ? new Date(effectiveFrom) : new Date();
+
+    // Archive the structure being replaced.
+    if (employee.salary && employee.salary.monthlyGross > 0) {
+      employee.salaryHistory.push({
+        annualCtc: employee.salary.annualCtc,
+        monthlyGross: employee.salary.monthlyGross,
+        basic: employee.salary.basic,
+        hra: employee.salary.hra,
+        specialAllowance: employee.salary.specialAllowance,
+        pf: employee.salary.pf,
+        professionalTax: employee.salary.professionalTax,
+        otherDeductions: employee.salary.otherDeductions,
+        effectiveFrom: employee.salary.effectiveFrom,
+        note: note || 'Superseded by a newer revision',
+        revisedBy: req.user._id,
+        revisedByName: req.user.name,
+        revisedAt: new Date(),
+      });
+    }
+
+    employee.salary = next;
+    await employee.save();
+
+    res.status(200).json({
+      success: true,
+      message: `Salary structure saved for ${employee.name} — monthly gross ₹${next.monthlyGross}`,
+      salary: employee.salary,
+      salaryHistory: employee.salaryHistory,
+    });
+  } catch (error) {
+    console.error('Update Salary Error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to save salary structure',
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Clear all database data
+// @route   DELETE /api/users/purge-database
+// @access  Private (Admin only)
+const clearAllData = async (req, res) => {
+  try {
+    // This wipes every collection and cannot be undone. Require an explicit
+    // typed confirmation and block it outside development entirely, so a stray
+    // request can never empty a live database.
+    if (process.env.NODE_ENV === 'production' && process.env.ALLOW_DB_PURGE !== 'true') {
+      return res.status(403).json({
+        success: false,
+        message: 'Database purge is disabled in production.',
+      });
+    }
+
+    if (req.body?.confirm !== 'PURGE ALL DATA') {
+      return res.status(400).json({
+        success: false,
+        message:
+          'This permanently deletes every employee, payslip, leave and attendance record. Send { "confirm": "PURGE ALL DATA" } to proceed.',
+      });
+    }
+
+    console.warn(`DATABASE PURGE requested by ${req.user.email} (${req.user._id})`);
+
+    const Attendance = require('../models/Attendance');
+    const Leave = require('../models/Leave');
+    const Salary = require('../models/Salary');
+
+    await User.deleteMany({});
+    await Attendance.deleteMany({});
+    await Leave.deleteMany({});
+    await Salary.deleteMany({});
+    await Department.deleteMany({});
+    await Designation.deleteMany({});
+
+    res.status(200).json({
+      success: true,
+      message: 'Database purged successfully. All collections are now empty.',
+    });
+  } catch (error) {
+    console.error('Purge Database Error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to purge database',
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   getAllEmployees,
+  getMyTeam,
+  getEligibleManagers,
   getEmployeeById,
   createEmployee,
+  downloadEmployeeTemplate,
+  bulkUploadEmployees,
   updateEmployee,
   deleteEmployee,
   getUserDocuments,
   addUserDocument,
   deleteUserDocument,
+  downloadUserDocument,
   verifyUserDocument,
+  uploadUserAvatar,
+  resetUserAvatar,
+  previewSalaryBreakup,
+  updateEmployeeSalary,
+  clearAllData,
 };

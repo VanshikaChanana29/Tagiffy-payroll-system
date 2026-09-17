@@ -1,14 +1,11 @@
 const Leave = require('../models/Leave');
 const User = require('../models/User');
-const { differenceInCalendarDays, parseISO, isAfter, isBefore } = require('date-fns');
-
-// Helper to calculate days count (inclusive)
-const calculateDays = (startDateStr, endDateStr) => {
-  const start = parseISO(startDateStr);
-  const end = parseISO(endDateStr);
-  const diff = differenceInCalendarDays(end, start);
-  return diff + 1;
-};
+const OrgSettings = require('../models/OrgSettings');
+const { countWorkingDays } = require('../utils/attendanceRules');
+const { getVisibleUserIds, canManageEmployee } = require('../utils/teamScope');
+const { isAdminRole } = require('../utils/roles');
+const { getHolidayMap } = require('./holidayController');
+const { parseISO, isAfter, format } = require('date-fns');
 
 // @desc    Apply for a new leave
 // @route   POST /api/leaves
@@ -43,11 +40,22 @@ const applyLeave = async (req, res) => {
       });
     }
 
-    const daysCount = calculateDays(startDate, endDate);
+    // Leave is charged in working days: a Friday-to-Monday request costs two
+    // days, not four, and never eats a weekend out of someone's balance.
+    const settings = await OrgSettings.getSettings();
+    const holidayMap = await getHolidayMap(startDate, endDate, req.user.department);
+    const { workingDays: daysCount, calendarDays } = countWorkingDays(
+      startDate,
+      endDate,
+      settings,
+      holidayMap
+    );
+
     if (daysCount < 1) {
       return res.status(400).json({
         success: false,
-        message: 'Leave duration must be at least 1 day',
+        message:
+          'That range is entirely weekends or holidays, so there is nothing to apply for.',
       });
     }
 
@@ -98,6 +106,7 @@ const applyLeave = async (req, res) => {
       startDate,
       endDate,
       daysCount,
+      calendarDays,
       reason: reason.trim(),
       status: 'Pending',
     });
@@ -106,7 +115,10 @@ const applyLeave = async (req, res) => {
 
     res.status(201).json({
       success: true,
-      message: `Leave application for ${daysCount} day(s) submitted successfully`,
+      message:
+        calendarDays === daysCount
+          ? `Leave application for ${daysCount} day(s) submitted successfully`
+          : `Leave submitted: ${calendarDays} calendar days, ${daysCount} working day(s) charged.`,
       leave: newLeave,
     });
   } catch (error) {
@@ -124,7 +136,7 @@ const applyLeave = async (req, res) => {
 // @access  Private
 const getMyLeaves = async (req, res) => {
   try {
-    const userId = (req.user.role === 'admin' && req.query.userId) ? req.query.userId : req.user._id;
+    const userId = (isAdminRole(req.user.role) && req.query.userId) ? req.query.userId : req.user._id;
 
     const user = await User.findById(userId).select('leaveBalance name employeeId');
     const leaves = await Leave.find({ userId })
@@ -166,6 +178,12 @@ const getAllLeaves = async (req, res) => {
       query.status = status;
     }
 
+    // Managers see their own team's requests; admins see everyone's.
+    const visibleIds = await getVisibleUserIds(req.user);
+    if (visibleIds !== null) {
+      query.userId = { $in: visibleIds };
+    }
+
     let leaves = await Leave.find(query)
       .populate('userId', 'name email employeeId department designation avatar leaveBalance')
       .populate('reviewedBy', 'name designation')
@@ -190,10 +208,11 @@ const getAllLeaves = async (req, res) => {
       );
     }
 
-    const allLeavesCount = await Leave.countDocuments();
-    const pendingCount = await Leave.countDocuments({ status: 'Pending' });
-    const approvedCount = await Leave.countDocuments({ status: 'Approved' });
-    const rejectedCount = await Leave.countDocuments({ status: 'Rejected' });
+    const scopeFilter = visibleIds !== null ? { userId: { $in: visibleIds } } : {};
+    const allLeavesCount = await Leave.countDocuments(scopeFilter);
+    const pendingCount = await Leave.countDocuments({ ...scopeFilter, status: 'Pending' });
+    const approvedCount = await Leave.countDocuments({ ...scopeFilter, status: 'Approved' });
+    const rejectedCount = await Leave.countDocuments({ ...scopeFilter, status: 'Rejected' });
 
     res.status(200).json({
       success: true,
@@ -231,15 +250,46 @@ const updateLeaveStatus = async (req, res) => {
       });
     }
 
+    // A refusal an employee cannot act on is not a decision. Same rule as
+    // document rejections and attendance corrections.
+    if (status === 'Rejected' && !adminComment.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please give a reason so the employee understands the decision.',
+      });
+    }
+
     const leave = await Leave.findById(id);
     if (!leave) {
       return res.status(404).json({ success: false, message: 'Leave request not found' });
+    }
+
+    if (leave.status === 'Cancelled') {
+      return res.status(400).json({
+        success: false,
+        message: 'This request was cancelled by the employee and can no longer be reviewed.',
+      });
     }
 
     const previousStatus = leave.status;
     const employee = await User.findById(leave.userId);
     if (!employee) {
       return res.status(404).json({ success: false, message: 'Employee not found' });
+    }
+
+    if (!(await canManageEmployee(req.user, leave.userId))) {
+      return res.status(403).json({
+        success: false,
+        message: 'You can only decide on leave for people who report to you.',
+      });
+    }
+
+    // Approving your own leave is not a decision, it is a conflict of interest.
+    if (leave.userId.toString() === req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'You cannot approve or reject your own leave request.',
+      });
     }
 
     // Handle Leave Balance adjustments
@@ -299,8 +349,94 @@ const updateLeaveStatus = async (req, res) => {
   }
 };
 
+
+// @desc    Employee cancels their own leave request
+// @route   PUT /api/leaves/:id/cancel
+// @access  Private (owner only)
+//
+// Applied by mistake? The employee withdraws it themselves instead of asking HR
+// to reject it. Approved leave can still be withdrawn until it starts, and the
+// balance is handed back.
+const cancelMyLeave = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const leave = await Leave.findById(id);
+    if (!leave) {
+      return res.status(404).json({ success: false, message: 'Leave request not found' });
+    }
+
+    if (leave.userId.toString() !== req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'You can only cancel your own leave requests.',
+      });
+    }
+
+    if (leave.status === 'Cancelled') {
+      return res.status(400).json({
+        success: false,
+        message: 'This request is already cancelled.',
+      });
+    }
+
+    if (leave.status === 'Rejected') {
+      return res.status(400).json({
+        success: false,
+        message: 'A rejected request cannot be cancelled.',
+      });
+    }
+
+    const todayStr = format(new Date(), 'yyyy-MM-dd');
+
+    if (leave.status === 'Approved') {
+      // Once the leave has begun, attendance already reflects it, so HR has to
+      // be the one to unwind it.
+      if (leave.startDate <= todayStr) {
+        return res.status(400).json({
+          success: false,
+          message:
+            'This leave has already started. Please ask HR to reverse it instead.',
+        });
+      }
+
+      // Give the balance back, mirroring the approval deduction.
+      const employee = await User.findById(leave.userId);
+      if (employee) {
+        if (leave.leaveType === 'Paid') {
+          employee.leaveBalance.paid += leave.daysCount;
+        } else if (leave.leaveType === 'Sick') {
+          employee.leaveBalance.sick += leave.daysCount;
+        }
+        await employee.save();
+      }
+    }
+
+    leave.status = 'Cancelled';
+    leave.cancelledAt = new Date();
+    await leave.save();
+
+    const employee = await User.findById(leave.userId).select('leaveBalance');
+
+    res.status(200).json({
+      success: true,
+      message: `Leave request for ${leave.startDate} cancelled.`,
+      leave,
+      updatedBalance: employee ? employee.leaveBalance : null,
+    });
+  } catch (error) {
+    console.error('Cancel Leave Error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to cancel leave request',
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   applyLeave,
+  cancelMyLeave,
   getMyLeaves,
   getAllLeaves,
   updateLeaveStatus,

@@ -35,7 +35,7 @@ const EmployeeContextBanner = ({ onTabChange }) => {
   };
 
   return (
-    <div className="sticky top-16 z-20 bg-gradient-to-r from-brand-900/95 via-indigo-900/95 to-slate-900/95 text-white border-b border-brand-500/30 shadow-lg backdrop-blur-md transition-all duration-200">
+    <div className="sticky top-16 z-20 bg-slate-900 text-white border-b border-brand-500/30 shadow-soft backdrop-blur-md transition-all duration-200">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2.5 flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
         {/* Left: Employee Info */}
         <div className="flex items-center gap-3 min-w-0">

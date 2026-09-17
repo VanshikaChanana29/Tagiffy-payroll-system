@@ -5,7 +5,7 @@ const EmployeeInspectionContext = createContext(null);
 export const EmployeeInspectionProvider = ({ children }) => {
   const [inspectedEmployee, setInspectedEmployee] = useState(() => {
     try {
-      const saved = sessionStorage.getItem('workzen_inspected_employee');
+      const saved = sessionStorage.getItem('taggify_inspected_employee');
       return saved ? JSON.parse(saved) : null;
     } catch {
       return null;
@@ -13,7 +13,7 @@ export const EmployeeInspectionProvider = ({ children }) => {
   });
 
   const [activeTab, setActiveTab] = useState(() => {
-    return sessionStorage.getItem('workzen_inspected_tab') || 'dashboard';
+    return sessionStorage.getItem('taggify_inspected_tab') || 'dashboard';
   });
 
   const selectEmployee = (employee, tab = 'dashboard') => {
@@ -21,8 +21,8 @@ export const EmployeeInspectionProvider = ({ children }) => {
     setInspectedEmployee(employee);
     setActiveTab(tab);
     try {
-      sessionStorage.setItem('workzen_inspected_employee', JSON.stringify(employee));
-      sessionStorage.setItem('workzen_inspected_tab', tab);
+      sessionStorage.setItem('taggify_inspected_employee', JSON.stringify(employee));
+      sessionStorage.setItem('taggify_inspected_tab', tab);
     } catch (e) {
       console.error('SessionStorage error:', e);
     }
@@ -32,8 +32,8 @@ export const EmployeeInspectionProvider = ({ children }) => {
     setInspectedEmployee(null);
     setActiveTab('dashboard');
     try {
-      sessionStorage.removeItem('workzen_inspected_employee');
-      sessionStorage.removeItem('workzen_inspected_tab');
+      sessionStorage.removeItem('taggify_inspected_employee');
+      sessionStorage.removeItem('taggify_inspected_tab');
     } catch (e) {
       console.error('SessionStorage error:', e);
     }
@@ -42,7 +42,7 @@ export const EmployeeInspectionProvider = ({ children }) => {
   const setTab = (tab) => {
     setActiveTab(tab);
     try {
-      sessionStorage.setItem('workzen_inspected_tab', tab);
+      sessionStorage.setItem('taggify_inspected_tab', tab);
     } catch (e) {
       console.error('SessionStorage error:', e);
     }
@@ -53,7 +53,7 @@ export const EmployeeInspectionProvider = ({ children }) => {
     const merged = { ...inspectedEmployee, ...updatedFields };
     setInspectedEmployee(merged);
     try {
-      sessionStorage.setItem('workzen_inspected_employee', JSON.stringify(merged));
+      sessionStorage.setItem('taggify_inspected_employee', JSON.stringify(merged));
     } catch (e) {
       console.error('SessionStorage error:', e);
     }

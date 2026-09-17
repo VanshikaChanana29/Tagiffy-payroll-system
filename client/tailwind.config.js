@@ -8,32 +8,46 @@ export default {
   theme: {
     extend: {
       colors: {
+        // Taggify brand orange — matches the accent in the TAGGIFY wordmark
         brand: {
-          50: '#f5f3ff',
-          100: '#ede9fe',
-          200: '#ddd6fe',
-          300: '#c4b5fd',
-          400: '#a78bfa',
-          500: '#8b5cf6',
-          600: '#7c3aed',
-          700: '#6d28d9',
-          800: '#5b21b6',
-          900: '#4c1d95',
-          950: '#2e1065',
+          50: '#fff7ed',
+          100: '#ffedd5',
+          200: '#fed7aa',
+          300: '#fdba74',
+          400: '#fb923c',
+          500: '#f97316',
+          600: '#ea580c',
+          700: '#c2410c',
+          800: '#9a3412',
+          900: '#7c2d12',
+          950: '#431407',
         },
+        // Near-black neutrals from the logo lockup
         slate: {
-          850: '#151e2e',
-          950: '#0b0f19',
-        }
+          750: '#293548',
+          850: '#161d2b',
+          950: '#0a0a0b',
+        },
       },
       fontFamily: {
         sans: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+        display: ['Plus Jakarta Sans', 'Inter', 'system-ui', 'sans-serif'],
       },
       boxShadow: {
-        'soft': '0 2px 15px -3px rgba(0, 0, 0, 0.07), 0 10px 20px -2px rgba(0, 0, 0, 0.04)',
-        'card': '0 0 0 1px rgba(0, 0, 0, 0.05), 0 2px 8px rgba(0, 0, 0, 0.06)',
-        'glow': '0 0 25px -5px rgba(124, 58, 237, 0.35)',
-      }
+        'soft': '0 1px 2px rgba(15, 23, 42, 0.04), 0 4px 12px -4px rgba(15, 23, 42, 0.06)',
+        'card': '0 1px 2px rgba(0, 0, 0, 0.28)',
+        'glow': '0 4px 14px -4px rgba(249, 115, 22, 0.45)',
+        'tooltip': '0 4px 16px -2px rgba(0, 0, 0, 0.22)',
+      },
+      keyframes: {
+        'tooltip-in': {
+          from: { opacity: '0', transform: 'translateY(2px) scale(0.97)' },
+          to: { opacity: '1', transform: 'translateY(0) scale(1)' },
+        },
+      },
+      animation: {
+        'tooltip-in': 'tooltip-in 120ms ease-out',
+      },
     },
   },
   plugins: [],

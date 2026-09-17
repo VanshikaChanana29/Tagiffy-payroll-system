@@ -30,7 +30,7 @@ const userSchema = new mongoose.Schema(
     },
     role: {
       type: String,
-      enum: ['admin', 'employee'],
+      enum: ['super_admin', 'admin', 'manager', 'employee'],
       default: 'employee',
     },
     department: {
@@ -43,6 +43,11 @@ const userSchema = new mongoose.Schema(
       required: true,
       default: 'Team Member',
     },
+    reportingManager: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
     phone: {
       type: String,
       default: '',
@@ -52,6 +57,11 @@ const userSchema = new mongoose.Schema(
       default: Date.now,
     },
     avatar: {
+      type: String,
+      default: '',
+    },
+    // Filename of an uploaded photo on disk; empty when the avatar is generated initials.
+    avatarFile: {
       type: String,
       default: '',
     },
@@ -71,6 +81,42 @@ const userSchema = new mongoose.Schema(
       relation: { type: String, default: '' },
       phone: { type: String, default: '' },
     },
+    // Current salary structure. Captured at onboarding from an annual CTC and
+    // split by the org's configured percentages; HR may override any component.
+    salary: {
+      annualCtc: { type: Number, default: 0 },
+      monthlyGross: { type: Number, default: 0 },
+      basic: { type: Number, default: 0 },
+      hra: { type: Number, default: 0 },
+      specialAllowance: { type: Number, default: 0 },
+      pf: { type: Number, default: 0 },
+      professionalTax: { type: Number, default: 0 },
+      otherDeductions: { type: Number, default: 0 },
+      // True when HR typed components by hand instead of deriving them from CTC.
+      isCustom: { type: Boolean, default: false },
+      effectiveFrom: { type: Date, default: null },
+    },
+
+    // A raise is a new revision, not an edit, so past payslips stay truthful and
+    // the pay history is auditable.
+    salaryHistory: [
+      {
+        annualCtc: { type: Number, default: 0 },
+        monthlyGross: { type: Number, default: 0 },
+        basic: { type: Number, default: 0 },
+        hra: { type: Number, default: 0 },
+        specialAllowance: { type: Number, default: 0 },
+        pf: { type: Number, default: 0 },
+        professionalTax: { type: Number, default: 0 },
+        otherDeductions: { type: Number, default: 0 },
+        effectiveFrom: { type: Date, default: null },
+        note: { type: String, default: '' },
+        revisedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+        revisedByName: { type: String, default: '' },
+        revisedAt: { type: Date, default: Date.now },
+      },
+    ],
+
     leaveBalance: {
       paid: { type: Number, default: 12 },
       sick: { type: Number, default: 8 },
@@ -92,14 +138,25 @@ const userSchema = new mongoose.Schema(
       {
         name: { type: String, required: true },
         type: { type: String, required: true },
-        fileUrl: { type: String, default: '' },
-        fileSize: { type: String, default: '1.2 MB' },
+        // Real stored file. storedName is the generated filename on disk; it is
+        // never exposed to the client, which downloads via the document id.
+        storedName: { type: String, default: '' },
+        originalName: { type: String, default: '' },
+        mimeType: { type: String, default: 'application/pdf' },
+        fileSizeBytes: { type: Number, default: 0 },
+        fileSize: { type: String, default: '' },
         status: {
           type: String,
           enum: ['Verified', 'Pending Verification', 'Rejected'],
-          default: 'Verified',
+          default: 'Pending Verification',
         },
+        // Audit trail: who uploaded it, and who accepted or rejected it, and when.
+        uploadedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
         uploadedAt: { type: Date, default: Date.now },
+        reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+        reviewedByName: { type: String, default: '' },
+        reviewedAt: { type: Date, default: null },
+        rejectionReason: { type: String, default: '' },
       },
     ],
   },

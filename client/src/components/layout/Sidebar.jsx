@@ -8,30 +8,38 @@ import {
   DollarSign,
   UserCircle,
   LogOut,
-  ChevronRight,
   X,
+  Building2,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
-import { WorkZenIcon } from '../common/WorkZenLogo';
+import { TaggifyIcon } from '../common/TaggifyLogo';
+import Tooltip from '../common/Tooltip';
 
 const Sidebar = ({ isOpen, onClose }) => {
   const { user, logout, isAdmin } = useAuth();
+  const isManager = user?.role === 'manager';
   const toast = useToast();
   const navigate = useNavigate();
 
   const handleLogout = async () => {
     await logout();
-    toast.info('Logged out of WorkZen');
+    toast.info('Logged out of Taggify');
     navigate('/login');
   };
 
+  // HR/admin is also an employee: they check in, apply leave, and get
+  // payslips like anyone else, alongside their org-wide oversight pages.
   const adminNavItems = [
     { label: 'Dashboard', path: '/admin', icon: LayoutDashboard, exact: true },
-    { label: 'Employee Directory', path: '/admin/employees', icon: Users },
-    { label: 'All Attendance', path: '/admin/attendance', icon: Clock },
-    { label: 'Time Off Approvals', path: '/admin/leaves', icon: CalendarDays },
-    { label: 'Payroll Management', path: '/admin/payroll', icon: DollarSign },
+    { label: 'Employees', path: '/admin/employees', icon: Users },
+    { label: 'Attendance', path: '/admin/attendance', icon: Clock },
+    { label: 'Time Off', path: '/admin/leaves', icon: CalendarDays },
+    { label: 'Payroll', path: '/admin/payroll', icon: DollarSign },
+    { label: 'Org Settings', path: '/admin/org-settings', icon: Building2 },
+    { label: 'My Attendance', path: '/employee/attendance', icon: Clock },
+    { label: 'My Time Off', path: '/employee/leaves', icon: CalendarDays },
+    { label: 'My Payslips', path: '/employee/salary', icon: DollarSign },
     { label: 'My Profile', path: '/admin/profile', icon: UserCircle },
   ];
 
@@ -43,126 +51,116 @@ const Sidebar = ({ isOpen, onClose }) => {
     { label: 'My Profile', path: '/employee/profile', icon: UserCircle },
   ];
 
-  const navItems = isAdmin ? adminNavItems : employeeNavItems;
+  // A manager gets their own self-service pages plus their team's screens —
+  // the same components as HR, scoped to their reports by the server.
+  const managerNavItems = [
+    { label: 'Dashboard', path: '/employee', icon: LayoutDashboard, exact: true },
+    { label: 'My Team', path: '/team', icon: Users },
+    { label: 'Team Attendance', path: '/team/attendance', icon: Clock },
+    { label: 'Team Time Off', path: '/team/leaves', icon: CalendarDays },
+    { label: 'My Attendance', path: '/employee/attendance', icon: Clock },
+    { label: 'My Time Off', path: '/employee/leaves', icon: CalendarDays },
+    { label: 'My Payslips', path: '/employee/salary', icon: DollarSign },
+    { label: 'My Profile', path: '/employee/profile', icon: UserCircle },
+  ];
+
+  const navItems = isAdmin ? adminNavItems : isManager ? managerNavItems : employeeNavItems;
 
   return (
     <>
-      {/* Mobile Backdrop */}
+      {/* Mobile backdrop */}
       {isOpen && (
         <div
           onClick={onClose}
-          className="fixed inset-0 bg-slate-950/60 dark:bg-slate-950/80 backdrop-blur-sm z-40 lg:hidden"
+          className="fixed inset-0 z-40 bg-slate-950/50 backdrop-blur-sm lg:hidden"
         />
       )}
 
-      {/* Sidebar Container */}
       <aside
-        className={`fixed top-0 bottom-0 left-0 z-50 w-72 bg-white/95 dark:bg-slate-900/95 border-r border-slate-200 dark:border-slate-800/80 flex flex-col justify-between transition-all duration-300 ease-in-out lg:translate-x-0 ${
-          isOpen ? 'translate-x-0' : '-translate-x-full'
-        }`}
+        className={`fixed inset-y-0 left-0 z-50 w-64 flex flex-col
+                    bg-white dark:bg-slate-900
+                    border-r border-slate-200 dark:border-slate-800
+                    transition-transform duration-200 ease-out lg:translate-x-0 ${
+                      isOpen ? 'translate-x-0' : '-translate-x-full'
+                    }`}
       >
-        {/* Top Branding */}
-        <div>
-          <div className="p-6 flex items-center justify-between border-b border-slate-200 dark:border-slate-800/60">
-            <div className="flex items-center gap-3">
-              <WorkZenIcon size={38} />
-              <div>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-lg font-black tracking-tight text-slate-900 dark:text-white">
-                    Work<span className="text-brand-600 dark:text-brand-400">Zen</span>
-                  </span>
-                  <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-brand-500/15 text-brand-600 dark:text-brand-300 border border-brand-500/25">
-                    HRMS
-                  </span>
-                </div>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
-                  {isAdmin ? 'Admin Operations' : 'Employee Workspace'}
-                </p>
+        {/* Brand */}
+        <div className="h-16 px-4 flex items-center justify-between border-b border-slate-200 dark:border-slate-800">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <TaggifyIcon size={32} />
+            <div className="min-w-0">
+              <div className="font-display text-base font-extrabold uppercase leading-none tracking-tight text-slate-900 dark:text-white">
+                TAG<span className="text-brand-500">GIFY</span>
               </div>
+              <p className="mt-1 text-[11px] leading-none text-slate-500 dark:text-slate-400">
+                {isAdmin ? 'Admin workspace' : 'Employee workspace'}
+              </p>
             </div>
-
-            {/* Mobile close button */}
-            <button
-              onClick={onClose}
-              className="lg:hidden text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
-            >
-              <X className="w-5 h-5" />
-            </button>
           </div>
 
-          {/* Navigation Links */}
-          <nav className="p-4 space-y-1.5">
-            <div className="px-3 py-2 text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-              Navigation
-            </div>
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              return (
-                <NavLink
-                  key={item.path}
-                  to={item.path}
-                  end={item.exact}
-                  onClick={() => onClose?.()}
-                  className={({ isActive }) =>
-                    `flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-semibold transition-all group ${
-                      isActive
-                        ? 'bg-gradient-to-r from-brand-600 to-indigo-600 text-white shadow-glow'
-                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800/60'
-                    }`
-                  }
-                >
-                  {({ isActive }) => (
-                    <>
-                      <div className="flex items-center gap-3">
-                        <Icon
-                          className={`w-4 h-4 transition-colors ${
-                            isActive ? 'text-white' : 'text-slate-500 dark:text-slate-400 group-hover:text-slate-800 dark:group-hover:text-slate-200'
-                          }`}
-                        />
-                        <span>{item.label}</span>
-                      </div>
-                      {isActive && <ChevronRight className="w-4 h-4 text-white/70" />}
-                    </>
-                  )}
-                </NavLink>
-              );
-            })}
-          </nav>
+          <Tooltip label="Close menu" side="right">
+            <button onClick={onClose} className="btn-icon lg:hidden" aria-label="Close menu">
+              <X className="w-4 h-4" />
+            </button>
+          </Tooltip>
         </div>
 
-        {/* Bottom User Card & Logout */}
-        <div className="p-4 border-t border-slate-200 dark:border-slate-800/80 bg-slate-50 dark:bg-slate-950/40">
-          <div className="p-3 rounded-2xl bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-800 shadow-sm flex items-center justify-between mb-3">
-            <div className="flex items-center gap-3 min-w-0">
-              <img
-                src={user?.avatar}
-                alt={user?.name}
-                className="w-9 h-9 rounded-xl object-cover border border-slate-200 dark:border-slate-700 shrink-0"
-              />
-              <div className="truncate">
-                <div className="text-xs font-bold text-slate-900 dark:text-white truncate">{user?.name}</div>
-                <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                  {user?.designation || (isAdmin ? 'HR Admin' : 'Employee')}
-                </div>
+        {/* Navigation */}
+        <nav className="flex-1 overflow-y-auto p-3 space-y-1">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            return (
+              <NavLink
+                key={item.path}
+                to={item.path}
+                end={item.exact}
+                onClick={() => onClose?.()}
+                className={({ isActive }) =>
+                  `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                    isActive
+                      ? 'bg-brand-500 text-white'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
+                  }`
+                }
+              >
+                {({ isActive }) => (
+                  <>
+                    <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-white' : ''}`} />
+                    <span className="truncate">{item.label}</span>
+                  </>
+                )}
+              </NavLink>
+            );
+          })}
+        </nav>
+
+        {/* User + sign out */}
+        <div className="p-3 border-t border-slate-200 dark:border-slate-800">
+          <div className="flex items-center gap-2.5 px-2 py-2 mb-1 min-w-0">
+            <img
+              src={user?.avatar}
+              alt=""
+              className="w-8 h-8 rounded-lg object-cover shrink-0 border border-slate-200 dark:border-slate-700"
+            />
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-xs font-semibold text-slate-900 dark:text-white">
+                {user?.name}
+              </div>
+              <div className="truncate text-[11px] text-slate-500 dark:text-slate-400">
+                {user?.designation || (isAdmin ? 'HR Admin' : 'Employee')}
               </div>
             </div>
-            <span
-              className={`shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded uppercase ${
-                isAdmin
-                  ? 'bg-amber-500/10 text-amber-600 dark:text-amber-300 border border-amber-500/20'
-                  : 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-300 border border-indigo-500/20'
-              }`}
-            >
-              {user?.role}
-            </span>
           </div>
 
           <button
             onClick={handleLogout}
-            className="w-full py-2.5 px-3 rounded-xl bg-white dark:bg-slate-900 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-slate-200 dark:border-slate-800 hover:border-rose-300 dark:hover:border-rose-500/40 text-slate-700 dark:text-slate-300 hover:text-rose-600 dark:hover:text-rose-300 text-xs font-semibold flex items-center justify-center gap-2 transition-all group shadow-sm"
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium
+ text-slate-600 dark:text-slate-400
+                       hover:bg-rose-50 dark:hover:bg-rose-950/40
+                       hover:text-rose-600 dark:hover:text-rose-400 transition-colors"
           >
-            <LogOut className="w-4 h-4 text-slate-500 dark:text-slate-400 group-hover:text-rose-600 dark:group-hover:text-rose-400" />
-            <span>Sign Out</span>
+            <LogOut className="w-4 h-4 shrink-0" />
+            <span>Sign out</span>
           </button>
         </div>
       </aside>

@@ -25,13 +25,22 @@ import {
   Plus,
   Trash2,
   RefreshCw,
+  Download,
+  Upload,
 } from 'lucide-react';
 import { useEmployeeInspection } from '../../context/EmployeeInspectionContext';
 import { useToast } from '../../context/ToastContext';
 import demoAvatars from '../../utils/avatars';
 import api from '../../api/client';
+import {
+  uploadDocument,
+  downloadDocument,
+  readBlobError,
+  MAX_DOC_MB,
+} from '../../api/files';
 import { format } from 'date-fns';
-import { WorkZenIcon } from '../../components/common/WorkZenLogo';
+import { TaggifyIcon } from '../../components/common/TaggifyLogo';
+import Tooltip from '../../components/common/Tooltip';
 
 const EmployeeContextView = () => {
   const {
@@ -59,7 +68,11 @@ const EmployeeContextView = () => {
 
   // Add Document Modal
   const [showAddDocModal, setShowAddDocModal] = useState(false);
-  const [newDoc, setNewDoc] = useState({ name: '', type: 'Government ID', fileSize: '1.5 MB' });
+  const [newDoc, setNewDoc] = useState({ name: '', type: 'Government ID' });
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [rejectTarget, setRejectTarget] = useState(null);
+  const [rejectReason, setRejectReason] = useState('');
 
   const fetchAllEmployeeData = async () => {
     if (!inspectedEmployee?._id) return;
@@ -227,40 +240,79 @@ const EmployeeContextView = () => {
     }
   };
 
-  const handleVerifyDocument = async (docId, newStatus) => {
+  const handleVerifyDocument = async (docId, newStatus, rejectionReason = '') => {
     if (!inspectedEmployee?._id) return;
     try {
       const res = await api.put(
         `/users/${inspectedEmployee._id}/documents/${docId}/status`,
-        { status: newStatus }
+        { status: newStatus, rejectionReason }
       );
       if (res.data.success) {
-        toast.success(`Document marked as ${newStatus}`);
-        setDocuments((prev) =>
-          prev.map((d) => (d._id === docId ? { ...d, status: newStatus } : d))
-        );
+        toast.success(res.data.message || `Document marked as ${newStatus}`);
+        setDocuments(res.data.documents || []);
+        setRejectTarget(null);
+        setRejectReason('');
       }
     } catch (err) {
-      toast.error('Failed to update document status');
+      toast.error(err.response?.data?.message || 'Failed to update document status');
+    }
+  };
+
+  const submitRejection = (e) => {
+    e.preventDefault();
+    if (!rejectReason.trim()) {
+      toast.error('Please tell the employee what needs correcting.');
+      return;
+    }
+    handleVerifyDocument(rejectTarget._id, 'Rejected', rejectReason);
+  };
+
+  const handleFilePicked = (file) => {
+    if (!file) return;
+    if (file.type !== 'application/pdf') {
+      toast.error('Only PDF files are accepted.');
+      return;
+    }
+    if (file.size > MAX_DOC_MB * 1024 * 1024) {
+      toast.error(`File is too large. Maximum size is ${MAX_DOC_MB} MB.`);
+      return;
+    }
+    setSelectedFile(file);
+    setNewDoc((prev) => ({ ...prev, name: prev.name || file.name }));
+  };
+
+  const handleDownloadDocument = async (doc) => {
+    try {
+      await downloadDocument(inspectedEmployee._id, doc);
+    } catch (err) {
+      toast.error((await readBlobError(err)) || 'Failed to download document');
     }
   };
 
   const handleAddDocument = async (e) => {
     e.preventDefault();
-    if (!newDoc.name) {
-      toast.error('Please enter document title');
+    if (!selectedFile) {
+      toast.error('Please choose a PDF file to upload');
       return;
     }
     try {
-      const res = await api.post(`/users/${inspectedEmployee._id}/documents`, newDoc);
+      setUploading(true);
+      const res = await uploadDocument(inspectedEmployee._id, {
+        file: selectedFile,
+        name: newDoc.name,
+        type: newDoc.type,
+      });
       if (res.data.success) {
-        toast.success('Document uploaded to employee dossier');
+        toast.success(res.data.message || 'Document uploaded to employee dossier');
         setDocuments(res.data.documents || []);
         setShowAddDocModal(false);
-        setNewDoc({ name: '', type: 'Government ID', fileSize: '1.5 MB' });
+        setSelectedFile(null);
+        setNewDoc({ name: '', type: 'Government ID' });
       }
     } catch (err) {
-      toast.error('Failed to upload document');
+      toast.error(err.response?.data?.message || 'Failed to upload document');
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -287,8 +339,8 @@ const EmployeeContextView = () => {
 
   if (!inspectedEmployee) {
     return (
-      <div className="text-center py-16 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-8 shadow-sm">
-        <div className="w-16 h-16 rounded-2xl bg-brand-500/10 text-brand-600 dark:text-brand-400 flex items-center justify-center mx-auto mb-4">
+      <div className="text-center py-16 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-8 shadow-sm">
+        <div className="w-16 h-16 rounded-xl bg-brand-500/10 text-brand-600 dark:text-brand-400 flex items-center justify-center mx-auto mb-4">
           <User className="w-8 h-8" />
         </div>
         <h3 className="text-xl font-bold text-slate-900 dark:text-white">No Employee Selected</h3>
@@ -315,7 +367,7 @@ const EmployeeContextView = () => {
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
       {/* 1. EMPLOYEE HEADER SUMMARY CARD */}
-      <div className="rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-sm relative overflow-hidden">
+      <div className="rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-sm relative overflow-hidden">
         <div className="absolute top-0 right-0 w-80 h-80 bg-brand-500/5 dark:bg-brand-500/10 rounded-full blur-3xl pointer-events-none"></div>
 
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative z-10">
@@ -323,7 +375,7 @@ const EmployeeContextView = () => {
             <img
               src={emp.avatar || demoAvatars.generic(emp.name)}
               alt={emp.name}
-              className="w-20 h-20 rounded-2xl object-cover border-2 border-brand-400/60 shadow-md shrink-0"
+              className="w-20 h-20 rounded-xl object-cover border-2 border-brand-400/60 shadow-soft shrink-0"
             />
             <div>
               <div className="flex items-center gap-2.5 flex-wrap">
@@ -368,14 +420,15 @@ const EmployeeContextView = () => {
           </div>
 
           <div className="flex items-center gap-2.5 self-stretch md:self-auto justify-end">
-            <button
-              type="button"
-              onClick={fetchAllEmployeeData}
-              title="Refresh context"
-              className="p-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-colors"
-            >
-              <RefreshCw className="w-4 h-4" />
-            </button>
+            <Tooltip label="Reload this employee's data" side="bottom">
+              <button aria-label="Reload this employee's data"
+                type="button"
+                onClick={fetchAllEmployeeData}
+                className="p-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-colors"
+              >
+                <RefreshCw className="w-4 h-4" />
+              </button>
+            </Tooltip>
             <button
               type="button"
               onClick={clearInspectedEmployee}
@@ -396,7 +449,7 @@ const EmployeeContextView = () => {
           {/* Quick Metrics Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {/* Metric 1: Today Attendance */}
-            <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-2">
+            <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                   Today's Attendance
@@ -416,7 +469,7 @@ const EmployeeContextView = () => {
             </div>
 
             {/* Metric 2: Paid Leave Balance */}
-            <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-2">
+            <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                   Paid Leave Balance
@@ -434,12 +487,12 @@ const EmployeeContextView = () => {
             </div>
 
             {/* Metric 3: Latest Net Salary */}
-            <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-2">
+            <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                   Latest Net Pay
                 </span>
-                <div className="w-8 h-8 rounded-xl bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+                <div className="w-8 h-8 rounded-xl bg-brand-500/15 text-brand-600 dark:text-brand-400 flex items-center justify-center">
                   <DollarSign className="w-4 h-4" />
                 </div>
               </div>
@@ -452,7 +505,7 @@ const EmployeeContextView = () => {
             </div>
 
             {/* Metric 4: Documents in Dossier */}
-            <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-2">
+            <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                   Compliance Dossier
@@ -471,7 +524,7 @@ const EmployeeContextView = () => {
           </div>
 
           {/* 7-Day Attendance Rhythm Stream */}
-          <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+          <div className="p-6 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-base font-bold text-slate-900 dark:text-white">
@@ -501,7 +554,7 @@ const EmployeeContextView = () => {
                   return (
                     <div
                       key={idx}
-                      className={`p-3 rounded-2xl border text-center transition-all ${
+                      className={`p-3 rounded-xl border text-center transition-all ${
                         isPresent
                           ? 'bg-emerald-500/10 dark:bg-emerald-950/40 border-emerald-500/30 text-emerald-800 dark:text-emerald-300'
                           : isWeekend
@@ -513,7 +566,7 @@ const EmployeeContextView = () => {
                     >
                       <div className="text-[11px] font-bold uppercase">{day.shortDay || day.dayName?.slice(0, 3)}</div>
                       <div className="text-base font-black my-0.5">{day.dayNumber || day.date?.slice(-2)}</div>
-                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-white/60 dark:bg-slate-900/60 inline-block truncate max-w-full">
+                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-white/60 dark:bg-slate-900 inline-block truncate max-w-full">
                         {day.status}
                       </span>
                     </div>
@@ -528,7 +581,7 @@ const EmployeeContextView = () => {
           </div>
 
           {/* Recent Activity Feed */}
-          <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+          <div className="p-6 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-base font-bold text-slate-900 dark:text-white">
@@ -552,7 +605,7 @@ const EmployeeContextView = () => {
                 {recentActivities.map((act) => (
                   <div
                     key={act.id}
-                    className="p-3.5 rounded-2xl bg-slate-50/80 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800/80 flex items-center justify-between gap-4"
+                    className="p-3.5 rounded-xl bg-slate-50/80 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800/80 flex items-center justify-between gap-4"
                   >
                     <div className="flex items-center gap-3">
                       <div className="w-9 h-9 rounded-xl bg-brand-500/10 text-brand-600 dark:text-brand-400 flex items-center justify-center shrink-0">
@@ -591,7 +644,7 @@ const EmployeeContextView = () => {
       {/* TAB 2: EMPLOYEE PROFILE */}
       {/* ========================================================================= */}
       {activeTab === 'profile' && (
-        <div className="rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-sm space-y-6">
+        <div className="rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-sm space-y-6">
           <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4">
             <div>
               <h3 className="text-lg font-bold text-slate-900 dark:text-white">
@@ -645,7 +698,7 @@ const EmployeeContextView = () => {
                   disabled={!isEditingProfile}
                   value={editFormData.name || ''}
                   onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white disabled:opacity-75 focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                  className="theme-input w-full"
                 />
               </div>
 
@@ -658,7 +711,7 @@ const EmployeeContextView = () => {
                   disabled={!isEditingProfile}
                   value={editFormData.email || ''}
                   onChange={(e) => setEditFormData({ ...editFormData, email: e.target.value })}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white disabled:opacity-75 focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                  className="theme-input w-full"
                 />
               </div>
 
@@ -672,7 +725,7 @@ const EmployeeContextView = () => {
                   value={editFormData.phone || ''}
                   onChange={(e) => setEditFormData({ ...editFormData, phone: e.target.value })}
                   placeholder="+91 98765 43210"
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white disabled:opacity-75 focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                  className="theme-input w-full"
                 />
               </div>
 
@@ -685,7 +738,7 @@ const EmployeeContextView = () => {
                   disabled={!isEditingProfile}
                   value={editFormData.department || ''}
                   onChange={(e) => setEditFormData({ ...editFormData, department: e.target.value })}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white disabled:opacity-75 focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                  className="theme-input w-full"
                 />
               </div>
 
@@ -698,7 +751,7 @@ const EmployeeContextView = () => {
                   disabled={!isEditingProfile}
                   value={editFormData.designation || ''}
                   onChange={(e) => setEditFormData({ ...editFormData, designation: e.target.value })}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white disabled:opacity-75 focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                  className="theme-input w-full"
                 />
               </div>
 
@@ -710,7 +763,7 @@ const EmployeeContextView = () => {
                   disabled={!isEditingProfile}
                   value={editFormData.status || 'Active'}
                   onChange={(e) => setEditFormData({ ...editFormData, status: e.target.value })}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white disabled:opacity-75 focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                  className="theme-input w-full"
                 >
                   <option value="Active">Active</option>
                   <option value="Inactive">Inactive</option>
@@ -739,7 +792,7 @@ const EmployeeContextView = () => {
                       })
                     }
                     placeholder="e.g. 42 MG Road"
-                    className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white disabled:opacity-75"
+                    className="theme-input w-full"
                   />
                 </div>
                 <div className="grid grid-cols-3 gap-2">
@@ -756,7 +809,7 @@ const EmployeeContextView = () => {
                         })
                       }
                       placeholder="Bengaluru"
-                      className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white disabled:opacity-75"
+                      className="theme-input w-full"
                     />
                   </div>
                   <div>
@@ -772,7 +825,7 @@ const EmployeeContextView = () => {
                         })
                       }
                       placeholder="Karnataka"
-                      className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white disabled:opacity-75"
+                      className="theme-input w-full"
                     />
                   </div>
                   <div>
@@ -788,7 +841,7 @@ const EmployeeContextView = () => {
                         })
                       }
                       placeholder="560001"
-                      className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white disabled:opacity-75"
+                      className="theme-input w-full"
                     />
                   </div>
                 </div>
@@ -812,7 +865,7 @@ const EmployeeContextView = () => {
                       })
                     }
                     placeholder="e.g. Ramesh Kulkarni"
-                    className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white disabled:opacity-75"
+                    className="theme-input w-full"
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-2">
@@ -832,7 +885,7 @@ const EmployeeContextView = () => {
                         })
                       }
                       placeholder="Spouse / Parent"
-                      className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white disabled:opacity-75"
+                      className="theme-input w-full"
                     />
                   </div>
                   <div>
@@ -851,7 +904,7 @@ const EmployeeContextView = () => {
                         })
                       }
                       placeholder="+91 98765 00000"
-                      className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white disabled:opacity-75"
+                      className="theme-input w-full"
                     />
                   </div>
                 </div>
@@ -868,7 +921,7 @@ const EmployeeContextView = () => {
         <div className="space-y-6">
           {/* Summary Stats */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center">
+            <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center">
               <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400">
                 {attendanceData.stats?.presentCount ?? 5}
               </div>
@@ -876,7 +929,7 @@ const EmployeeContextView = () => {
                 Present Days
               </div>
             </div>
-            <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center">
+            <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center">
               <div className="text-2xl font-black text-amber-600 dark:text-amber-400">
                 {attendanceData.stats?.halfDayCount ?? 0}
               </div>
@@ -884,7 +937,7 @@ const EmployeeContextView = () => {
                 Half Days
               </div>
             </div>
-            <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center">
+            <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center">
               <div className="text-2xl font-black text-brand-600 dark:text-brand-400">
                 {attendanceData.stats?.totalHoursWorked ?? '41.5'}h
               </div>
@@ -892,8 +945,8 @@ const EmployeeContextView = () => {
                 Total Logged
               </div>
             </div>
-            <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center">
-              <div className="text-2xl font-black text-indigo-600 dark:text-indigo-400">
+            <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center">
+              <div className="text-2xl font-black text-brand-600 dark:text-brand-400">
                 {attendanceData.stats?.avgDailyHours ?? '8.3'}h
               </div>
               <div className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mt-0.5">
@@ -903,7 +956,7 @@ const EmployeeContextView = () => {
           </div>
 
           {/* Records Table */}
-          <div className="rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-sm space-y-4">
+          <div className="rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-sm space-y-4">
             <h3 className="text-base font-bold text-slate-900 dark:text-white">
               30-Day Punch & Attendance Records
             </h3>
@@ -973,7 +1026,7 @@ const EmployeeContextView = () => {
         <div className="space-y-6">
           {/* Balance Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="p-5 rounded-2xl bg-emerald-500/10 dark:bg-emerald-950/40 border border-emerald-500/30 space-y-1">
+            <div className="p-5 rounded-xl bg-emerald-500/10 dark:bg-emerald-950/40 border border-emerald-500/30 space-y-1">
               <span className="text-xs font-bold uppercase text-emerald-800 dark:text-emerald-300">
                 Paid Leave Quota
               </span>
@@ -983,7 +1036,7 @@ const EmployeeContextView = () => {
               <p className="text-xs text-emerald-600 dark:text-emerald-400">Annual standard allocation</p>
             </div>
 
-            <div className="p-5 rounded-2xl bg-blue-500/10 dark:bg-blue-950/40 border border-blue-500/30 space-y-1">
+            <div className="p-5 rounded-xl bg-blue-500/10 dark:bg-blue-950/40 border border-blue-500/30 space-y-1">
               <span className="text-xs font-bold uppercase text-blue-800 dark:text-blue-300">
                 Sick Leave Quota
               </span>
@@ -993,19 +1046,19 @@ const EmployeeContextView = () => {
               <p className="text-xs text-blue-600 dark:text-blue-400">Medical emergency allowance</p>
             </div>
 
-            <div className="p-5 rounded-2xl bg-purple-500/10 dark:bg-purple-950/40 border border-purple-500/30 space-y-1">
-              <span className="text-xs font-bold uppercase text-purple-800 dark:text-purple-300">
+            <div className="p-5 rounded-xl bg-brand-500/10 dark:bg-brand-950/40 border border-brand-500/30 space-y-1">
+              <span className="text-xs font-bold uppercase text-brand-800 dark:text-brand-300">
                 Unpaid Leave
               </span>
-              <div className="text-2xl font-black text-purple-700 dark:text-purple-200">
+              <div className="text-2xl font-black text-brand-700 dark:text-brand-200">
                 {leaveData.balance?.unpaid ?? 0} Days Taken
               </div>
-              <p className="text-xs text-purple-600 dark:text-purple-400">Deducted from monthly payroll</p>
+              <p className="text-xs text-brand-600 dark:text-brand-400">Deducted from monthly payroll</p>
             </div>
           </div>
 
           {/* Submitted Applications List */}
-          <div className="rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-sm space-y-4">
+          <div className="rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-sm space-y-4">
             <h3 className="text-base font-bold text-slate-900 dark:text-white">
               Submitted Leave Applications
             </h3>
@@ -1019,7 +1072,7 @@ const EmployeeContextView = () => {
                 {leaveData.leaves.map((l) => (
                   <div
                     key={l._id}
-                    className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2.5"
+                    className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2.5"
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
@@ -1048,7 +1101,7 @@ const EmployeeContextView = () => {
                     </p>
 
                     {l.reason && (
-                      <p className="text-xs text-slate-500 dark:text-slate-400 bg-white/60 dark:bg-slate-900/60 p-2 rounded-xl border border-slate-200/60 dark:border-slate-800">
+                      <p className="text-xs text-slate-500 dark:text-slate-400 bg-white/60 dark:bg-slate-900 p-2 rounded-xl border border-slate-200/60 dark:border-slate-800">
                         <em>Reason:</em> "{l.reason}"
                       </p>
                     )}
@@ -1072,13 +1125,13 @@ const EmployeeContextView = () => {
       {activeTab === 'payroll' && (
         <div className="space-y-6">
           {salaryData.payslips.length === 0 ? (
-            <div className="p-8 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center text-xs text-slate-400">
+            <div className="p-8 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center text-xs text-slate-400">
               No salary records found for this employee.
             </div>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* Left Column: Payslip Selector */}
-              <div className="rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 shadow-sm space-y-3">
+              <div className="rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 shadow-sm space-y-3">
                 <h3 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider">
                   Select Pay Period
                 </h3>
@@ -1090,9 +1143,9 @@ const EmployeeContextView = () => {
                         key={sal._id}
                         type="button"
                         onClick={() => setSelectedPayslip(sal)}
-                        className={`w-full text-left p-3 rounded-2xl border transition-all ${
+                        className={`w-full text-left p-3 rounded-xl border transition-all ${
                           isSelected
-                            ? 'bg-brand-500/10 border-brand-500/40 text-brand-600 dark:text-brand-300 shadow-xs'
+                            ? 'bg-brand-500/10 border-brand-500/40 text-brand-600 dark:text-brand-300 shadow-sm'
                             : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-850 text-slate-700 dark:text-slate-300'
                         }`}
                       >
@@ -1116,13 +1169,13 @@ const EmployeeContextView = () => {
 
               {/* Right Column: Full Itemized Payslip */}
               {selectedPayslip && (
-                <div className="lg:col-span-2 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-sm space-y-6">
+                <div className="lg:col-span-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-sm space-y-6">
                   <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4">
                     <div className="flex items-center gap-3">
-                      <WorkZenIcon size={40} />
+                      <TaggifyIcon size={40} />
                       <div>
                         <h4 className="text-base font-black text-slate-900 dark:text-white">
-                          WorkZen Technologies Pvt. Ltd.
+                          Taggify Media Pvt. Ltd.
                         </h4>
                         <p className="text-xs text-slate-500">
                           Payslip for {getMonthName(selectedPayslip.month)} {selectedPayslip.year}
@@ -1136,7 +1189,7 @@ const EmployeeContextView = () => {
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs">
                     {/* Earnings */}
-                    <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2.5">
+                    <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2.5">
                       <h5 className="font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider text-[11px]">
                         Earnings
                       </h5>
@@ -1167,7 +1220,7 @@ const EmployeeContextView = () => {
                     </div>
 
                     {/* Deductions */}
-                    <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2.5">
+                    <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2.5">
                       <h5 className="font-bold text-rose-600 dark:text-rose-400 uppercase tracking-wider text-[11px]">
                         Deductions
                       </h5>
@@ -1199,7 +1252,7 @@ const EmployeeContextView = () => {
                   </div>
 
                   {/* Net Pay Callout */}
-                  <div className="p-4 rounded-2xl bg-brand-500/10 border border-brand-500/30 flex items-center justify-between">
+                  <div className="p-4 rounded-xl bg-brand-500/10 border border-brand-500/30 flex items-center justify-between">
                     <div>
                       <div className="text-xs font-bold uppercase tracking-wider text-brand-700 dark:text-brand-300">
                         Net Salary Transfer
@@ -1221,7 +1274,7 @@ const EmployeeContextView = () => {
       {/* TAB 6: DOCUMENTS DOSSIER */}
       {/* ========================================================================= */}
       {activeTab === 'documents' && (
-        <div className="rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-sm space-y-6">
+        <div className="rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-sm space-y-6">
           <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4">
             <div>
               <h3 className="text-lg font-bold text-slate-900 dark:text-white">
@@ -1257,7 +1310,7 @@ const EmployeeContextView = () => {
                 return (
                   <div
                     key={doc._id}
-                    className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-3"
+                    className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-3"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-center gap-3">
@@ -1267,8 +1320,21 @@ const EmployeeContextView = () => {
                         <div>
                           <h4 className="text-xs font-bold text-slate-900 dark:text-white">{doc.name}</h4>
                           <span className="text-[10px] text-slate-500 dark:text-slate-400">
-                            {doc.type} • {doc.fileSize || '1.2 MB'}
+                            {doc.type} • {doc.fileSize || '—'}
                           </span>
+                          {isRejected && doc.rejectionReason && (
+                            <div className="mt-1.5 text-[10px] text-rose-600 dark:text-rose-300 bg-rose-500/10 border border-rose-500/20 rounded-lg px-2 py-1">
+                              <span className="font-bold">Reason:</span> {doc.rejectionReason}
+                            </div>
+                          )}
+                          {doc.reviewedByName && !isPending && (
+                            <div className="mt-1 text-[10px] text-slate-400 dark:text-slate-500">
+                              {doc.status} by {doc.reviewedByName}
+                              {doc.reviewedAt
+                                ? ` on ${new Date(doc.reviewedAt).toLocaleDateString('en-IN')}`
+                                : ''}
+                            </div>
+                          )}
                         </div>
                       </div>
 
@@ -1288,6 +1354,16 @@ const EmployeeContextView = () => {
                     {/* Admin Verification Controls */}
                     <div className="flex items-center justify-between pt-2 border-t border-slate-200/60 dark:border-slate-800/60 text-xs">
                       <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleDownloadDocument(doc)}
+                          disabled={!doc.storedName}
+                          title={doc.storedName ? 'Download PDF' : 'No file attached to this legacy record'}
+                          className="px-2 py-1 rounded-lg font-bold text-[10px] bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-brand-100 dark:hover:bg-brand-900/50 disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-1"
+                        >
+                          <Download className="w-3 h-3" />
+                          PDF
+                        </button>
                         <button
                           type="button"
                           onClick={() => handleVerifyDocument(doc._id, 'Verified')}
@@ -1312,7 +1388,7 @@ const EmployeeContextView = () => {
                         </button>
                         <button
                           type="button"
-                          onClick={() => handleVerifyDocument(doc._id, 'Rejected')}
+                          onClick={() => { setRejectTarget(doc); setRejectReason(''); }}
                           className={`px-2 py-1 rounded-lg font-bold text-[10px] transition-colors ${
                             isRejected
                               ? 'bg-rose-500 text-white'
@@ -1323,14 +1399,15 @@ const EmployeeContextView = () => {
                         </button>
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteDocument(doc._id)}
-                        className="p-1 rounded-lg text-slate-400 hover:text-rose-500 transition-colors"
-                        title="Delete document"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      <Tooltip label="Delete document" side="top">
+                        <button aria-label="Delete document"
+                          type="button"
+                          onClick={() => handleDeleteDocument(doc._id)}
+                          className="p-1 rounded-lg text-slate-400 hover:text-rose-500 transition-colors"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </Tooltip>
                     </div>
                   </div>
                 );
@@ -1339,23 +1416,124 @@ const EmployeeContextView = () => {
           )}
 
           {/* Upload Document Modal */}
-          {showAddDocModal && (
+          {/* REJECT DOCUMENT MODAL — a rejection must say what to fix */}
+      {rejectTarget && (
+        <div className="fixed inset-0 z-[60] bg-slate-950/70 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl max-w-md w-full p-6 shadow-soft space-y-5">
+            <div className="flex items-center gap-3 border-b border-slate-200 dark:border-slate-800 pb-4">
+              <div className="w-10 h-10 rounded-xl bg-rose-500/10 text-rose-600 dark:text-rose-400 flex items-center justify-center">
+                <XCircle className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Reject Document</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 break-all">
+                  {rejectTarget.name}
+                </p>
+              </div>
+            </div>
+
+            <form onSubmit={submitRejection} className="space-y-4 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                  Reason for rejection *
+                </label>
+                <textarea
+                  required
+                  rows={3}
+                  value={rejectReason}
+                  onChange={(e) => setRejectReason(e.target.value)}
+                  placeholder="e.g. The scan is blurry — please upload a clearer copy."
+                  className="theme-input w-full"
+                />
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5">
+                  {inspectedEmployee?.name} sees this, so they know exactly what to correct.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => { setRejectTarget(null); setRejectReason(''); }}
+                  className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-6 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold flex items-center gap-2"
+                >
+                  <XCircle className="w-4 h-4" />
+                  Reject Document
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showAddDocModal && (
             <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-              <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-6 max-w-md w-full shadow-2xl space-y-4">
+              <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 max-w-md w-full shadow-soft space-y-4">
                 <div className="flex items-center justify-between">
                   <h4 className="text-base font-bold text-slate-900 dark:text-white">
                     Add Document to {emp.name}'s Dossier
                   </h4>
-                  <button
-                    type="button"
-                    onClick={() => setShowAddDocModal(false)}
-                    className="p-1 rounded-lg text-slate-400 hover:text-white"
-                  >
-                    <XCircle className="w-5 h-5" />
-                  </button>
+                  <Tooltip label="Close" side="left">
+                    <button aria-label="Close"
+                      type="button"
+                      onClick={() => setShowAddDocModal(false)}
+                      className="p-1 rounded-lg text-slate-400 hover:text-white"
+                    >
+                      <XCircle className="w-5 h-5" />
+                    </button>
+                  </Tooltip>
                 </div>
 
                 <form onSubmit={handleAddDocument} className="space-y-3.5 text-xs">
+                  <div>
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      PDF File *
+                    </label>
+                    <label
+                      className={`block cursor-pointer p-4 rounded-xl border-2 border-dashed text-center transition-all ${
+                        selectedFile
+                          ? 'border-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/20'
+                          : 'border-brand-300 dark:border-brand-800 hover:border-brand-500'
+                      }`}
+                    >
+                      <input
+                        type="file"
+                        accept="application/pdf,.pdf"
+                        className="hidden"
+                        onChange={(e) => {
+                          handleFilePicked(e.target.files?.[0]);
+                          e.target.value = '';
+                        }}
+                      />
+                      {selectedFile ? (
+                        <>
+                          <FileText className="w-6 h-6 mx-auto text-emerald-600 mb-1.5" />
+                          <div className="font-bold text-slate-800 dark:text-slate-200 break-all">
+                            {selectedFile.name}
+                          </div>
+                          <div className="text-[10px] text-emerald-700 dark:text-emerald-400 mt-1">
+                            {(selectedFile.size / 1024).toFixed(1)} KB · click to change
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="w-6 h-6 mx-auto text-brand-500 mb-1.5" />
+                          <div className="font-bold text-slate-800 dark:text-slate-200">
+                            Choose a PDF from your device
+                          </div>
+                          <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+                            PDF only · up to {MAX_DOC_MB} MB
+                          </div>
+                        </>
+                      )}
+                    </label>
+                  </div>
+
                   <div>
                     <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
                       Document Name *
@@ -1366,7 +1544,7 @@ const EmployeeContextView = () => {
                       value={newDoc.name}
                       onChange={(e) => setNewDoc({ ...newDoc, name: e.target.value })}
                       placeholder="e.g. Aadhaar Card, Degree Certificate"
-                      className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
+                      className="theme-input w-full"
                     />
                   </div>
 
@@ -1377,7 +1555,7 @@ const EmployeeContextView = () => {
                     <select
                       value={newDoc.type}
                       onChange={(e) => setNewDoc({ ...newDoc, type: e.target.value })}
-                      className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
+                      className="theme-input w-full"
                     >
                       <option value="Government ID">Government ID</option>
                       <option value="Address Proof">Address Proof</option>

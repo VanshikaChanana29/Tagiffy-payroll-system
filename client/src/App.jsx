@@ -14,7 +14,9 @@ import AllAttendancePage from './pages/admin/AllAttendancePage';
 import LeaveApprovalPage from './pages/admin/LeaveApprovalPage';
 import PayrollManagementPage from './pages/admin/PayrollManagementPage';
 import EmployeeContextView from './pages/admin/EmployeeContextView';
+import OrgSettingsPage from './pages/admin/OrgSettingsPage';
 import EmployeeDashboard from './pages/employee/EmployeeDashboard';
+import TeamDirectoryPage from './pages/manager/TeamDirectoryPage';
 import MyAttendancePage from './pages/employee/MyAttendancePage';
 import MyLeavesPage from './pages/employee/MyLeavesPage';
 import MySalaryPage from './pages/employee/MySalaryPage';
@@ -35,7 +37,7 @@ const RootRedirect = () => {
     return <Navigate to="/login" replace />;
   }
 
-  return user?.role === 'admin' ? (
+  return user?.role === 'admin' || user?.role === 'super_admin' ? (
     <Navigate to="/admin" replace />
   ) : (
     <Navigate to="/employee" replace />
@@ -54,20 +56,31 @@ function App() {
                 <Route path="/login" element={<LoginPage />} />
 
                 {/* Admin Role Protected Routes with Shared Layout */}
-                <Route element={<ProtectedRoute allowedRoles={['admin']} />}>
+                <Route element={<ProtectedRoute allowedRoles={['admin', 'super_admin']} />}>
                   <Route element={<AppLayout />}>
                     <Route path="/admin" element={<AdminDashboard />} />
                     <Route path="/admin/employees" element={<EmployeeDirectoryPage />} />
                     <Route path="/admin/attendance" element={<AllAttendancePage />} />
                     <Route path="/admin/leaves" element={<LeaveApprovalPage />} />
                     <Route path="/admin/payroll" element={<PayrollManagementPage />} />
+                    <Route path="/admin/org-settings" element={<OrgSettingsPage />} />
                     <Route path="/admin/profile" element={<ProfilePage />} />
                     <Route path="/admin/employee-view" element={<EmployeeContextView />} />
                   </Route>
                 </Route>
 
+                {/* Manager team views. These reuse the HR screens; the server
+                    narrows every response to the manager's own reports. */}
+                <Route element={<ProtectedRoute allowedRoles={['manager', 'admin', 'super_admin']} />}>
+                  <Route element={<AppLayout />}>
+                    <Route path="/team" element={<TeamDirectoryPage />} />
+                    <Route path="/team/attendance" element={<AllAttendancePage />} />
+                    <Route path="/team/leaves" element={<LeaveApprovalPage />} />
+                  </Route>
+                </Route>
+
                 {/* Employee Role Protected Routes with Shared Layout */}
-                <Route element={<ProtectedRoute allowedRoles={['employee', 'admin']} />}>
+                <Route element={<ProtectedRoute allowedRoles={['employee', 'manager', 'admin', 'super_admin']} />}>
                   <Route element={<AppLayout />}>
                     <Route path="/employee" element={<EmployeeDashboard />} />
                     <Route path="/employee/attendance" element={<MyAttendancePage />} />
