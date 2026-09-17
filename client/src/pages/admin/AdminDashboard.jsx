@@ -127,40 +127,48 @@ const AdminDashboard = () => {
   return (
     <div className="space-y-6 sm:space-y-8">
       {/* Welcome Banner */}
-      <div className="relative p-6 sm:p-8 rounded-xl bg-slate-900 text-white border border-brand-500/20 overflow-hidden shadow-soft">
+      <div className="relative p-6 sm:p-8 rounded-xl bg-gradient-to-br from-brand-500 via-brand-600 to-orange-700 text-white overflow-hidden shadow-glow">
+        <div
+          className="absolute inset-0 opacity-[0.07]"
+          style={{
+            backgroundImage:
+              'radial-gradient(circle at 20% 20%, white 1px, transparent 1px)',
+            backgroundSize: '22px 22px',
+          }}
+        />
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div>
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 mb-3">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-white/15 text-white border border-white/25 mb-3">
               <CheckCircle2 className="w-3.5 h-3.5" /> HR Command Center • Live Status
             </span>
             <h2 className="text-2xl sm:text-3xl font-extrabold text-white">
               Welcome back, {user?.name}!
             </h2>
-            <p className="text-slate-300 text-sm mt-1 max-w-xl">
+            <p className="text-white/85 text-sm mt-1 max-w-xl">
               Workforce intelligence, attendance roll call, and pending approvals.
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <div className="p-3.5 rounded-xl bg-black/30 backdrop-blur-md border border-white/10 text-center min-w-[110px]">
+            <div className="p-3.5 rounded-xl bg-white/15 backdrop-blur-md border border-white/25 text-center min-w-[110px]">
               <span className="text-2xl font-black text-white">{totalEmployees}</span>
-              <p className="text-[10px] text-slate-300 uppercase font-semibold mt-0.5">
+              <p className="text-[10px] text-white/80 uppercase font-semibold mt-0.5">
                 Total Staff
               </p>
             </div>
-            <div className="p-3.5 rounded-xl bg-black/30 backdrop-blur-md border border-white/10 text-center min-w-[110px]">
-              <span className="text-2xl font-black text-emerald-400">
+            <div className="p-3.5 rounded-xl bg-white/15 backdrop-blur-md border border-white/25 text-center min-w-[110px]">
+              <span className="text-2xl font-black text-white">
                 {attendanceStats.totalPresent}
               </span>
-              <p className="text-[10px] text-slate-300 uppercase font-semibold mt-0.5">
+              <p className="text-[10px] text-white/80 uppercase font-semibold mt-0.5">
                 Present Today
               </p>
             </div>
-            <div className="p-3.5 rounded-xl bg-black/30 backdrop-blur-md border border-white/10 text-center min-w-[110px]">
-              <span className="text-2xl font-black text-amber-400">
+            <div className="p-3.5 rounded-xl bg-white/15 backdrop-blur-md border border-white/25 text-center min-w-[110px]">
+              <span className="text-2xl font-black text-white">
                 {pendingLeaves.length}
               </span>
-              <p className="text-[10px] text-slate-300 uppercase font-semibold mt-0.5">
+              <p className="text-[10px] text-white/80 uppercase font-semibold mt-0.5">
                 Pending Leaves
               </p>
             </div>

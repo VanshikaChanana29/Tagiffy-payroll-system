@@ -209,24 +209,32 @@ const EmployeeDashboard = () => {
   return (
     <div className="space-y-6 sm:space-y-8">
       {/* Welcome Banner */}
-      <div className="relative p-6 sm:p-8 rounded-xl bg-slate-900 text-white border border-brand-500/20 overflow-hidden shadow-soft">
+      <div className="relative p-6 sm:p-8 rounded-xl bg-gradient-to-br from-brand-500 via-brand-600 to-orange-700 text-white overflow-hidden shadow-glow">
+        <div
+          className="absolute inset-0 opacity-[0.07]"
+          style={{
+            backgroundImage:
+              'radial-gradient(circle at 20% 20%, white 1px, transparent 1px)',
+            backgroundSize: '22px 22px',
+          }}
+        />
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div>
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-brand-500/20 text-brand-300 border border-brand-500/30 mb-3">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-white/15 text-white border border-white/25 mb-3">
               <Sparkles className="w-3.5 h-3.5" /> Employee Portal • {user?.employeeId}
             </span>
             <h2 className="text-2xl sm:text-3xl font-extrabold text-white">
               Welcome back, {user?.name}!
             </h2>
-            <p className="text-slate-300 text-sm mt-1 max-w-xl">
-              {user?.designation} in <span className="text-brand-300 font-semibold">{user?.department}</span>
+            <p className="text-white/85 text-sm mt-1 max-w-xl">
+              {user?.designation} in <span className="text-white font-semibold">{user?.department}</span>
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
             <button
               onClick={() => setLeaveModalOpen(true)}
-              className="px-4 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-xs font-bold flex items-center gap-2 transition-all shrink-0"
+              className="px-4 py-2.5 rounded-xl bg-white text-brand-700 hover:bg-white/90 text-xs font-bold flex items-center gap-2 transition-all shrink-0 shadow-sm"
             >
               <Plus className="w-4 h-4" />
               <span>Apply Time Off</span>

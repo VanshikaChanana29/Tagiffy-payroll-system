@@ -336,7 +336,15 @@ const ProfilePage = () => {
   return (
     <div className="space-y-6">
       {/* Profile Banner / Header Card */}
-      <div className="relative rounded-xl bg-slate-900 text-white border border-slate-800 p-6 sm:p-8 shadow-soft overflow-hidden">
+      <div className="relative rounded-xl bg-gradient-to-br from-brand-500 via-brand-600 to-orange-700 text-white p-6 sm:p-8 shadow-glow overflow-hidden">
+        <div
+          className="absolute inset-0 opacity-[0.07]"
+          style={{
+            backgroundImage:
+              'radial-gradient(circle at 20% 20%, white 1px, transparent 1px)',
+            backgroundSize: '22px 22px',
+          }}
+        />
         <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-5">
             <div className="relative group">
@@ -345,19 +353,19 @@ const ProfilePage = () => {
                   formData.avatar || buildInitialsAvatar(user?.name, user?.email)
                 }
                 alt={user?.name}
-                className="w-20 h-20 sm:w-24 sm:h-24 rounded-xl object-cover border-2 border-brand-500/50"
+                className="w-20 h-20 sm:w-24 sm:h-24 rounded-xl object-cover border-2 border-white/50"
               />
               <button
                 type="button"
                 onClick={() => setShowAvatarModal(true)}
                 title="Change Profile Picture"
-                className="absolute inset-0 bg-slate-950/60 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1 text-[10px] font-bold text-white cursor-pointer"
+                className="absolute inset-0 bg-black/50 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1 text-[10px] font-bold text-white cursor-pointer"
               >
-                <Camera className="w-5 h-5 text-brand-300" />
+                <Camera className="w-5 h-5" />
                 Change
               </button>
               <span
-                className={`absolute bottom-0 right-0 w-4 h-4 rounded-full border-2 border-slate-900 ${
+                className={`absolute bottom-0 right-0 w-4 h-4 rounded-full border-2 border-brand-600 ${
                   user?.status === 'Active' ? 'bg-emerald-500' : 'bg-rose-500'
                 }`}
               />
@@ -368,21 +376,21 @@ const ProfilePage = () => {
                 <span
                   className={`text-xs font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider ${
                     isAdmin
-                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                      : 'bg-brand-500/20 text-brand-300 border border-brand-500/30'
+                      ? 'bg-amber-500/25 text-amber-100 border border-amber-300/30'
+                      : 'bg-white/20 text-white border border-white/30'
                   }`}
                 >
                   {user?.role}
                 </span>
-                <span className="text-xs font-mono font-semibold px-2 py-0.5 rounded-md bg-slate-800 text-slate-300">
+                <span className="text-xs font-mono font-semibold px-2 py-0.5 rounded-md bg-black/25 text-white/90">
                   {user?.employeeId}
                 </span>
               </div>
-              <p className="text-slate-300 text-sm font-medium">
-                {user?.designation} • <span className="text-brand-300">{user?.department}</span>
+              <p className="text-white/85 text-sm font-medium">
+                {user?.designation} • <span className="text-white font-semibold">{user?.department}</span>
               </p>
-              <p className="text-xs text-slate-400 mt-1 flex items-center gap-1.5">
-                <Calendar className="w-3.5 h-3.5 text-slate-400" />
+              <p className="text-xs text-white/75 mt-1 flex items-center gap-1.5">
+                <Calendar className="w-3.5 h-3.5 text-white/75" />
                 Joined on {formattedJoiningDate}
               </p>
             </div>
@@ -392,18 +400,18 @@ const ProfilePage = () => {
             <button
               type="button"
               onClick={() => setShowPasswordModal(true)}
-              className="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-semibold flex items-center gap-2 transition-all border border-slate-700 shadow-sm"
+              className="px-3.5 py-2.5 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-semibold flex items-center gap-2 transition-all border border-white/25 shadow-sm"
             >
-              <KeyRound className="w-4 h-4 text-amber-400" />
+              <KeyRound className="w-4 h-4" />
               <span>Change Password</span>
             </button>
 
             <button
               type="button"
               onClick={() => setShowAvatarModal(true)}
-              className="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-2 transition-all border border-slate-700"
+              className="px-3.5 py-2.5 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-semibold flex items-center gap-2 transition-all border border-white/25"
             >
-              <Camera className="w-4 h-4 text-brand-400" />
+              <Camera className="w-4 h-4" />
               <span>Change Photo</span>
             </button>
 
@@ -411,8 +419,8 @@ const ProfilePage = () => {
               onClick={() => setIsEditing(!isEditing)}
               className={`px-4 py-2.5 rounded-xl font-semibold text-xs flex items-center gap-2 transition-all ${
                 isEditing
-                  ? 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                  : 'bg-brand-600 hover:bg-brand-500 text-white'
+                  ? 'bg-white/15 text-white hover:bg-white/25 border border-white/25'
+                  : 'bg-white text-brand-700 hover:bg-white/90'
               }`}
             >
               {isEditing ? (
