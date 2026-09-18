@@ -304,7 +304,9 @@ const AllAttendancePage = () => {
                         <span>{r.checkIn ? format(new Date(r.checkIn), 'hh:mm:ss a') : '—'}</span>
                         {r.checkInLocation?.isOutsideGeofence && (
                           <Tooltip
-                            label={`Punched in ${r.checkInLocation.distanceMeters}m from office`}
+                            label={`Punched in ${r.checkInLocation.distanceMeters}m from ${
+                              r.checkInLocation.matchedLocationName || 'office'
+                            }`}
                             side="top"
                           >
                             <a

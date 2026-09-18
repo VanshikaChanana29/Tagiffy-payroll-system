@@ -171,7 +171,10 @@ const CheckInOutWidget = ({ onAttendanceChange }) => {
         <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-300">
           <MapPinOff className="w-4 h-4 shrink-0" />
           <span className="text-xs font-semibold">
-            Punched in {formatDistance(attendance.checkInLocation.distanceMeters)} away from the configured office location
+            Punched in {formatDistance(attendance.checkInLocation.distanceMeters)} away from{' '}
+            {attendance.checkInLocation.matchedLocationName
+              ? `the nearest office (${attendance.checkInLocation.matchedLocationName})`
+              : 'the configured office location'}
           </span>
         </div>
       )}

@@ -26,6 +26,9 @@ import {
   Upload,
   ImagePlus,
   Type,
+  Laptop,
+  Hash,
+  Edit2,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
@@ -51,11 +54,17 @@ const ProfilePage = () => {
   const [loading, setLoading] = useState(false);
   const [documents, setDocuments] = useState([]);
   const [docLoading, setDocLoading] = useState(false);
+  const [assets, setAssets] = useState([]);
+  const [assetsLoading, setAssetsLoading] = useState(false);
 
   // Modals state
   const [showAvatarModal, setShowAvatarModal] = useState(false);
   const [showAddDocModal, setShowAddDocModal] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [showAssetModal, setShowAssetModal] = useState(false);
+  const [editingAsset, setEditingAsset] = useState(null);
+  const [assetForm, setAssetForm] = useState({ title: '', assetNumber: '', assetType: '' });
+  const [assetSubmitting, setAssetSubmitting] = useState(false);
 
   const [passwordData, setPasswordData] = useState({
     currentPassword: '',
@@ -73,7 +82,7 @@ const ProfilePage = () => {
   const [rejectReason, setRejectReason] = useState('');
   const [newDoc, setNewDoc] = useState({
     name: '',
-    type: 'Government ID',
+    type: 'Aadhar Card',
     fileSize: '1.2 MB',
   });
 
@@ -81,6 +90,7 @@ const ProfilePage = () => {
     name: '',
     email: '',
     phone: '',
+    dateOfBirth: '',
     avatar: '',
     department: '',
     designation: '',
@@ -114,12 +124,28 @@ const ProfilePage = () => {
     }
   };
 
+  const fetchAssets = async () => {
+    if (!user?._id && !user?.id) return;
+    try {
+      setAssetsLoading(true);
+      const res = await api.get(`/users/${user._id || user.id}/assets`);
+      if (res.data.success) {
+        setAssets(res.data.assets || []);
+      }
+    } catch (err) {
+      console.error('Failed to load assets', err);
+    } finally {
+      setAssetsLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (user) {
       setFormData({
         name: user.name || '',
         email: user.email || '',
         phone: user.phone || '',
+        dateOfBirth: user.dateOfBirth ? format(new Date(user.dateOfBirth), 'yyyy-MM-dd') : '',
         avatar: user.avatar || '',
         department: user.department || '',
         designation: user.designation || '',
@@ -138,6 +164,7 @@ const ProfilePage = () => {
         },
       });
       fetchDocuments();
+      fetchAssets();
     }
   }, [user]);
 
@@ -225,7 +252,7 @@ const ProfilePage = () => {
         setDocuments(res.data.documents || []);
         setShowAddDocModal(false);
         setSelectedFile(null);
-        setNewDoc({ name: '', type: 'Government ID', fileSize: '' });
+        setNewDoc({ name: '', type: 'Aadhar Card', fileSize: '' });
       }
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to upload document');
@@ -267,6 +294,63 @@ const ProfilePage = () => {
       }
     } catch (err) {
       toast.error('Failed to delete document');
+    }
+  };
+
+  const openAddAsset = () => {
+    setEditingAsset(null);
+    setAssetForm({ title: '', assetNumber: '', assetType: '' });
+    setShowAssetModal(true);
+  };
+
+  const openEditAsset = (asset) => {
+    setEditingAsset(asset);
+    setAssetForm({
+      title: asset.title || '',
+      assetNumber: asset.assetNumber || '',
+      assetType: asset.assetType || '',
+    });
+    setShowAssetModal(true);
+  };
+
+  const handleAssetSubmit = async (e) => {
+    e.preventDefault();
+    if (!assetForm.title.trim() || !assetForm.assetNumber.trim() || !assetForm.assetType.trim()) {
+      toast.error('Please fill in the asset title, asset number, and asset type.');
+      return;
+    }
+
+    try {
+      setAssetSubmitting(true);
+      const userId = user._id || user.id;
+      const res = editingAsset
+        ? await api.put(`/users/${userId}/assets/${editingAsset._id}`, assetForm)
+        : await api.post(`/users/${userId}/assets`, assetForm);
+
+      if (res.data.success) {
+        toast.success(res.data.message || (editingAsset ? 'Asset updated' : 'Asset added'));
+        setAssets(res.data.assets || []);
+        setShowAssetModal(false);
+        setEditingAsset(null);
+        setAssetForm({ title: '', assetNumber: '', assetType: '' });
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to save asset');
+    } finally {
+      setAssetSubmitting(false);
+    }
+  };
+
+  const handleDeleteAsset = async (assetId) => {
+    if (!window.confirm('Remove this asset from your profile?')) return;
+    try {
+      const res = await api.delete(`/users/${user._id || user.id}/assets/${assetId}`);
+      if (res.data.success) {
+        toast.success('Asset removed successfully');
+        setAssets(res.data.assets || []);
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to remove asset');
     }
   };
 
@@ -538,7 +622,7 @@ const ProfilePage = () => {
                 />
               </div>
 
-              <div className="sm:col-span-2">
+              <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-400 mb-1.5">Phone Number</label>
                 <input
                   type="text"
@@ -546,6 +630,17 @@ const ProfilePage = () => {
                   value={formData.phone}
                   onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                   placeholder="+91 98765 43210"
+                  className="theme-input w-full text-sm"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-400 mb-1.5">Date of Birth</label>
+                <input
+                  type="date"
+                  disabled={!isEditing}
+                  value={formData.dateOfBirth}
+                  onChange={(e) => setFormData({ ...formData, dateOfBirth: e.target.value })}
                   className="theme-input w-full text-sm"
                 />
               </div>
@@ -859,6 +954,195 @@ const ProfilePage = () => {
         )}
       </div>
 
+      {/* EMPLOYEE ASSETS SECTION */}
+      <div className="p-6 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card space-y-5 transition-colors">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
+          <div>
+            <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <Laptop className="w-5 h-5 text-brand-600 dark:text-brand-400" />
+              Assigned Assets
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              Company property assigned to you — laptop, phone, and other equipment.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={openAddAsset}
+            className="px-4 py-2 rounded-xl bg-brand-50 dark:bg-brand-950/60 hover:bg-brand-100 dark:hover:bg-brand-900/80 text-brand-700 dark:text-brand-300 border border-brand-300 dark:border-brand-800 text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm shrink-0"
+          >
+            <Plus className="w-4 h-4" />
+            Add Asset
+          </button>
+        </div>
+
+        {assetsLoading ? (
+          <div className="p-8 text-center text-slate-400 text-xs flex items-center justify-center gap-2">
+            <div className="w-4 h-4 border-2 border-brand-500 border-t-transparent rounded-full animate-spin"></div>
+            Loading assets...
+          </div>
+        ) : assets.length === 0 ? (
+          <div className="p-8 text-center text-slate-500 dark:text-slate-400 text-xs rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
+            No assets assigned yet. Click "Add Asset" to record a laptop, phone, or other equipment.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {assets.map((asset) => (
+              <div
+                key={asset._id}
+                className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3 hover:border-brand-500/50 transition-all shadow-sm"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-10 h-10 rounded-xl bg-brand-500/10 text-brand-600 dark:text-brand-400 flex items-center justify-center shrink-0">
+                    <Laptop className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                      {asset.title}
+                    </div>
+                    <div className="flex items-center gap-2 mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+                      <span className="font-medium px-1.5 py-0.2 rounded bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                        {asset.assetType}
+                      </span>
+                      <span className="flex items-center gap-0.5">
+                        <Hash className="w-3 h-3" />
+                        {asset.assetNumber}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <Tooltip label="Edit asset" side="top">
+                    <button aria-label="Edit asset"
+                      type="button"
+                      onClick={() => openEditAsset(asset)}
+                      className="p-1 rounded-lg text-slate-400 hover:text-brand-500 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                    </button>
+                  </Tooltip>
+                  <Tooltip label="Remove asset" side="top">
+                    <button aria-label="Remove asset"
+                      type="button"
+                      onClick={() => handleDeleteAsset(asset._id)}
+                      className="p-1 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </Tooltip>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ADD/EDIT ASSET MODAL */}
+      {showAssetModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl max-w-md w-full p-6 sm:p-8 shadow-soft space-y-5 my-8 transition-colors">
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-brand-500/10 text-brand-600 dark:text-brand-400 flex items-center justify-center">
+                  <Laptop className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+                    {editingAsset ? 'Edit Asset' : 'Add Asset'}
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    {editingAsset ? 'Update this asset\'s details' : 'Record a laptop, phone, or other equipment'}
+                  </p>
+                </div>
+              </div>
+              <Tooltip label="Close" side="left">
+                <button aria-label="Close"
+                  type="button"
+                  onClick={() => { setShowAssetModal(false); setEditingAsset(null); }}
+                  className="text-slate-400 hover:text-slate-700 dark:hover:text-white p-1 rounded-lg"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </Tooltip>
+            </div>
+
+            <form onSubmit={handleAssetSubmit} className="space-y-4 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                  Asset Title *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={assetForm.title}
+                  onChange={(e) => setAssetForm({ ...assetForm, title: e.target.value })}
+                  placeholder="e.g. Dell Latitude 5420 Laptop"
+                  className="theme-input w-full"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                  Asset Number *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={assetForm.assetNumber}
+                  onChange={(e) => setAssetForm({ ...assetForm, assetNumber: e.target.value })}
+                  placeholder="e.g. Serial / Asset Tag Number"
+                  className="theme-input w-full"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                  Asset Type *
+                </label>
+                <input
+                  type="text"
+                  required
+                  list="asset-type-suggestions"
+                  value={assetForm.assetType}
+                  onChange={(e) => setAssetForm({ ...assetForm, assetType: e.target.value })}
+                  placeholder="e.g. Laptop, Mobile Phone, Monitor"
+                  className="theme-input w-full"
+                />
+                <datalist id="asset-type-suggestions">
+                  <option value="Laptop" />
+                  <option value="Mobile Phone" />
+                  <option value="Monitor" />
+                  <option value="Keyboard" />
+                  <option value="Mouse" />
+                  <option value="Headset" />
+                  <option value="SIM Card" />
+                </datalist>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => { setShowAssetModal(false); setEditingAsset(null); }}
+                  className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={assetSubmitting}
+                  className="px-6 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-semibold flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Check className="w-4 h-4" />
+                  {assetSubmitting ? 'Saving...' : editingAsset ? 'Save Changes' : 'Add Asset'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* PROFILE PHOTO MODAL — upload a real photo, or use generated initials */}
       {showAvatarModal && (
         <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
@@ -968,8 +1252,8 @@ const ProfilePage = () => {
                   <FileText className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold text-slate-900 dark:text-white">Attach Dossier Document</h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">Add metadata for employee compliance file</p>
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-white">Attach Document</h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Upload a document for your profile</p>
                 </div>
               </div>
               <Tooltip label="Close" side="left">
@@ -1038,7 +1322,7 @@ const ProfilePage = () => {
                   required
                   value={newDoc.name}
                   onChange={(e) => setNewDoc({ ...newDoc, name: e.target.value })}
-                  placeholder="e.g. Aadhaar_Government_ID.pdf"
+                  placeholder="e.g. Aadhar_Card.pdf"
                   className="theme-input w-full"
                 />
               </div>
@@ -1052,12 +1336,10 @@ const ProfilePage = () => {
                   onChange={(e) => setNewDoc({ ...newDoc, type: e.target.value })}
                   className="theme-input w-full"
                 >
-                  <option value="Offer Letter">Offer / Appointment Letter</option>
-                  <option value="Government ID">Government ID (Aadhaar / PAN / Passport)</option>
-                  <option value="Address Proof">Address Proof / Utility Bill</option>
-                  <option value="Educational Certificate">Educational Degree / Certificate</option>
-                  <option value="Experience Certificate">Previous Experience / Relieving Letter</option>
-                  <option value="Tax Declaration">Tax Declaration / Form 16</option>
+                  <option value="Aadhar Card">Aadhar Card</option>
+                  <option value="PAN Card">PAN Card</option>
+                  <option value="12th Marksheet">12th Marksheet</option>
+                  <option value="Others">Others</option>
                 </select>
               </div>
 

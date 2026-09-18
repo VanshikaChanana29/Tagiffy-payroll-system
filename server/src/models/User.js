@@ -56,6 +56,10 @@ const userSchema = new mongoose.Schema(
       type: Date,
       default: Date.now,
     },
+    dateOfBirth: {
+      type: Date,
+      default: null,
+    },
     avatar: {
       type: String,
       default: '',
@@ -80,6 +84,11 @@ const userSchema = new mongoose.Schema(
       name: { type: String, default: '' },
       relation: { type: String, default: '' },
       phone: { type: String, default: '' },
+    },
+    bankDetails: {
+      accountNumber: { type: String, default: '' },
+      ifscCode: { type: String, default: '' },
+      bankName: { type: String, default: '' },
     },
     // Current salary structure. Captured at onboarding from an annual CTC and
     // split by the org's configured percentages; HR may override any component.
@@ -134,6 +143,12 @@ const userSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    // Set on the user's first successful login; stays null until then so we can
+    // tell a first-time sign-in (post-onboarding) apart from a returning one.
+    lastLoginAt: {
+      type: Date,
+      default: null,
+    },
     documents: [
       {
         name: { type: String, required: true },
@@ -157,6 +172,22 @@ const userSchema = new mongoose.Schema(
         reviewedByName: { type: String, default: '' },
         reviewedAt: { type: Date, default: null },
         rejectionReason: { type: String, default: '' },
+      },
+    ],
+
+    // Company property assigned to this employee (laptop, phone, etc). HR can
+    // assign assets to anyone; the employee can also keep their own up to date.
+    assets: [
+      {
+        title: { type: String, required: true, trim: true },
+        assetNumber: { type: String, required: true, trim: true },
+        assetType: { type: String, required: true, trim: true },
+        assignedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+        assignedByName: { type: String, default: '' },
+        createdAt: { type: Date, default: Date.now },
+        updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+        updatedByName: { type: String, default: '' },
+        updatedAt: { type: Date, default: null },
       },
     ],
   },

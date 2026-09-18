@@ -31,6 +31,9 @@ const orgSettingsSchema = new mongoose.Schema(
 
     // Office coordinates for geofenced punches. Null until an admin sets it —
     // punches are not distance-checked until then.
+    // Deprecated in favour of officeLocations (below), kept only so orgs that
+    // set this before multi-location support existed don't lose their data;
+    // buildPunchLocation() falls back to it when officeLocations is empty.
     officeLocation: {
       lat: { type: Number, default: null },
       lng: { type: Number, default: null },
@@ -38,7 +41,26 @@ const orgSettingsSchema = new mongoose.Schema(
     },
 
     // Punches beyond this distance from officeLocation are flagged as "away".
+    // Deprecated alongside officeLocation — see officeLocations[].radiusMeters.
     geofenceRadiusMeters: { type: Number, default: 200 },
+
+    // One or more office sites for geofenced punches. A punch is valid the
+    // moment it falls within *any* one of these radii — an employee working
+    // out of either branch should never be flagged as "away".
+    officeLocations: {
+      type: [
+        {
+          name: { type: String, default: '' },
+          lat: { type: Number, required: true },
+          lng: { type: Number, required: true },
+          address: { type: String, default: '' },
+          // Kept tight by default (50m) since multiple sites make a wide,
+          // shared radius more likely to overlap into the wrong building.
+          radiusMeters: { type: Number, default: 50 },
+        },
+      ],
+      default: [],
+    },
 
     // --- Salary rules ---
     // Monthly pay is simply CTC / 12. The only settings left are how loss of

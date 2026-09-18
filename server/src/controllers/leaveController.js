@@ -5,6 +5,7 @@ const { countWorkingDays } = require('../utils/attendanceRules');
 const { getVisibleUserIds, canManageEmployee } = require('../utils/teamScope');
 const { isAdminRole } = require('../utils/roles');
 const { getHolidayMap } = require('./holidayController');
+const { notify, getEscalationRecipientIds } = require('../utils/notificationService');
 const { parseISO, isAfter, format } = require('date-fns');
 
 // @desc    Apply for a new leave
@@ -112,6 +113,14 @@ const applyLeave = async (req, res) => {
     });
 
     await newLeave.save();
+
+    notify({
+      recipients: await getEscalationRecipientIds(user),
+      type: 'leave_applied',
+      title: 'New leave request',
+      message: `${user.name} applied for ${daysCount} day(s) of ${leaveType} leave (${startDate} to ${endDate}).`,
+      relatedEntity: { kind: 'Leave', id: newLeave._id },
+    });
 
     res.status(201).json({
       success: true,
@@ -333,6 +342,17 @@ const updateLeaveStatus = async (req, res) => {
 
     await leave.save();
 
+    notify({
+      recipients: [employee._id],
+      type: status === 'Approved' ? 'leave_approved' : 'leave_rejected',
+      title: `Leave ${status.toLowerCase()}`,
+      message:
+        status === 'Approved'
+          ? `Your ${leave.leaveType} leave from ${leave.startDate} to ${leave.endDate} has been approved.`
+          : `Your ${leave.leaveType} leave from ${leave.startDate} to ${leave.endDate} was rejected: ${adminComment.trim()}`,
+      relatedEntity: { kind: 'Leave', id: leave._id },
+    });
+
     res.status(200).json({
       success: true,
       message: `Leave request for ${employee.name} has been ${status.toLowerCase()} successfully`,
@@ -416,7 +436,15 @@ const cancelMyLeave = async (req, res) => {
     leave.cancelledAt = new Date();
     await leave.save();
 
-    const employee = await User.findById(leave.userId).select('leaveBalance');
+    const employee = await User.findById(leave.userId).select('leaveBalance name reportingManager role');
+
+    notify({
+      recipients: await getEscalationRecipientIds(employee || req.user),
+      type: 'leave_cancelled',
+      title: 'Leave request cancelled',
+      message: `${req.user.name} cancelled their ${leave.leaveType} leave request for ${leave.startDate} to ${leave.endDate}.`,
+      relatedEntity: { kind: 'Leave', id: leave._id },
+    });
 
     res.status(200).json({
       success: true,

@@ -2,7 +2,7 @@ const XLSX = require('xlsx');
 
 // HR can type a column heading in whatever casing/spacing they like — match
 // on a normalized form instead of forcing an exact header string.
-const normalizeHeader = (h) => String(h || '').trim().toLowerCase().replace(/[\s_-]+/g, '');
+const normalizeHeader = (h) => String(h || '').trim().toLowerCase().replace(/[\s_.-]+/g, '');
 
 const COLUMN_ALIASES = {
   name: ['name', 'fullname', 'employeename'],
@@ -10,12 +10,15 @@ const COLUMN_ALIASES = {
   department: ['department', 'dept'],
   designation: ['designation', 'title', 'jobtitle'],
   role: ['role'],
-  phone: ['phone', 'phonenumber', 'mobile', 'contactnumber'],
+  phone: ['phone', 'phonenumber', 'mobile', 'contactnumber', 'contactno'],
   joiningDate: ['joiningdate', 'dateofjoining', 'doj'],
   annualCtc: ['annualctc', 'ctc', 'annualsalary', 'salary'],
   reportingManagerEmail: ['reportingmanageremail', 'manageremail', 'reportingmanager'],
   password: ['password'],
-  employeeId: ['employeeid', 'empid', 'id'],
+  employeeId: ['employeeid', 'empid', 'id', 'empcode'],
+  accountNumber: ['accountno', 'accountnumber', 'bankaccountno', 'bankaccountnumber'],
+  ifscCode: ['ifsccode', 'ifsc'],
+  bankName: ['bankname'],
 };
 
 const ALIAS_TO_FIELD = Object.entries(COLUMN_ALIASES).reduce((map, [field, aliases]) => {
@@ -26,29 +29,27 @@ const ALIAS_TO_FIELD = Object.entries(COLUMN_ALIASES).reduce((map, [field, alias
 }, {});
 
 const TEMPLATE_HEADERS = [
+  'Emp.code',
   'Name',
   'Email',
-  'Department',
-  'Designation',
-  'Role',
-  'Phone',
-  'Joining Date',
-  'Annual CTC',
-  'Reporting Manager Email',
-  'Password',
+  'DOJ',
+  'Contact No.',
+  'Salary',
+  'Account no.',
+  'IFSC code',
+  'Bank name',
 ];
 
 const TEMPLATE_SAMPLE_ROW = [
+  'EMP-001',
   'Ramesh Patel',
   'ramesh.patel@example.com',
-  'Engineering',
-  'Software Engineer',
-  'employee',
-  '+91 98765 43210',
   '2026-01-15',
+  '+91 98765 43210',
   '1200000',
-  '',
-  '',
+  '675110110016199',
+  'BKID0006751',
+  'Bank of India',
 ];
 
 // Parses an uploaded workbook buffer into row objects keyed by our own field

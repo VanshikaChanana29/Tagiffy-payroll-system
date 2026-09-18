@@ -142,7 +142,7 @@ const AdminDashboard = () => {
               <CheckCircle2 className="w-3.5 h-3.5" /> HR Command Center • Live Status
             </span>
             <h2 className="text-2xl sm:text-3xl font-extrabold text-white">
-              Welcome back, {user?.name}!
+              {user?.isFirstLogin ? 'Welcome' : 'Welcome back'}, {user?.name}!
             </h2>
             <p className="text-white/85 text-sm mt-1 max-w-xl">
               Workforce intelligence, attendance roll call, and pending approvals.

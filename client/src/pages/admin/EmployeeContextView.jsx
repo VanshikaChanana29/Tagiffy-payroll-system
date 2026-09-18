@@ -27,6 +27,9 @@ import {
   RefreshCw,
   Download,
   Upload,
+  Laptop,
+  Hash,
+  Edit2,
 } from 'lucide-react';
 import { useEmployeeInspection } from '../../context/EmployeeInspectionContext';
 import { useToast } from '../../context/ToastContext';
@@ -58,6 +61,7 @@ const EmployeeContextView = () => {
   const [leaveData, setLeaveData] = useState({ balance: null, stats: null, leaves: [] });
   const [salaryData, setSalaryData] = useState({ latest: null, payslips: [] });
   const [documents, setDocuments] = useState([]);
+  const [assets, setAssets] = useState([]);
   const [recentActivities, setRecentActivities] = useState([]);
   const [selectedPayslip, setSelectedPayslip] = useState(null);
 
@@ -74,6 +78,12 @@ const EmployeeContextView = () => {
   const [rejectTarget, setRejectTarget] = useState(null);
   const [rejectReason, setRejectReason] = useState('');
 
+  // Add/Edit Asset Modal
+  const [showAssetModal, setShowAssetModal] = useState(false);
+  const [editingAsset, setEditingAsset] = useState(null);
+  const [assetForm, setAssetForm] = useState({ title: '', assetNumber: '', assetType: '' });
+  const [assetSubmitting, setAssetSubmitting] = useState(false);
+
   const fetchAllEmployeeData = async () => {
     if (!inspectedEmployee?._id) return;
     const empId = inspectedEmployee._id;
@@ -81,7 +91,7 @@ const EmployeeContextView = () => {
     try {
       setLoading(true);
 
-      const [userRes, attHistRes, attWeekRes, attTodayRes, leaveRes, payRes, docRes] =
+      const [userRes, attHistRes, attWeekRes, attTodayRes, leaveRes, payRes, docRes, assetRes] =
         await Promise.allSettled([
           api.get(`/users/${empId}`),
           api.get(`/attendance/my-history?userId=${empId}&limit=30`),
@@ -90,6 +100,7 @@ const EmployeeContextView = () => {
           api.get(`/leaves/my-leaves?userId=${empId}`),
           api.get(`/salaries/my-payslips?userId=${empId}`),
           api.get(`/users/${empId}/documents`),
+          api.get(`/users/${empId}/assets`),
         ]);
 
       // 1. Profile Data
@@ -152,6 +163,10 @@ const EmployeeContextView = () => {
       // 5. Documents Data
       const dData = docRes.status === 'fulfilled' ? docRes.value.data : {};
       setDocuments(dData.documents || []);
+
+      // 5b. Assets Data
+      const aData = assetRes.status === 'fulfilled' ? assetRes.value.data : {};
+      setAssets(aData.assets || []);
 
       // 6. Aggregate Chronological Recent Activity
       const activities = [];
@@ -326,6 +341,64 @@ const EmployeeContextView = () => {
       }
     } catch (err) {
       toast.error('Failed to delete document');
+    }
+  };
+
+  const openAddAsset = () => {
+    setEditingAsset(null);
+    setAssetForm({ title: '', assetNumber: '', assetType: '' });
+    setShowAssetModal(true);
+  };
+
+  const openEditAsset = (asset) => {
+    setEditingAsset(asset);
+    setAssetForm({
+      title: asset.title || '',
+      assetNumber: asset.assetNumber || '',
+      assetType: asset.assetType || '',
+    });
+    setShowAssetModal(true);
+  };
+
+  const handleAssetSubmit = async (e) => {
+    e.preventDefault();
+    if (!inspectedEmployee?._id) return;
+    if (!assetForm.title.trim() || !assetForm.assetNumber.trim() || !assetForm.assetType.trim()) {
+      toast.error('Please fill in the asset title, asset number, and asset type.');
+      return;
+    }
+
+    try {
+      setAssetSubmitting(true);
+      const res = editingAsset
+        ? await api.put(`/users/${inspectedEmployee._id}/assets/${editingAsset._id}`, assetForm)
+        : await api.post(`/users/${inspectedEmployee._id}/assets`, assetForm);
+
+      if (res.data.success) {
+        toast.success(res.data.message || (editingAsset ? 'Asset updated' : 'Asset assigned'));
+        setAssets(res.data.assets || []);
+        setShowAssetModal(false);
+        setEditingAsset(null);
+        setAssetForm({ title: '', assetNumber: '', assetType: '' });
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to save asset');
+    } finally {
+      setAssetSubmitting(false);
+    }
+  };
+
+  const handleDeleteAsset = async (assetId) => {
+    if (!inspectedEmployee?._id) return;
+    if (!window.confirm('Remove this asset from the employee\'s record?')) return;
+    try {
+      const res = await api.delete(`/users/${inspectedEmployee._id}/assets/${assetId}`);
+      if (res.data.success) {
+        toast.success('Asset removed');
+        setAssets(res.data.assets || []);
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to remove asset');
     }
   };
 
@@ -1579,6 +1652,183 @@ const EmployeeContextView = () => {
                       className="px-4 py-2 rounded-xl bg-brand-600 text-white font-bold hover:bg-brand-500"
                     >
                       Save Document
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB 7: ASSETS */}
+      {/* ========================================================================= */}
+      {activeTab === 'assets' && (
+        <div className="rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-sm space-y-6">
+          <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4">
+            <div>
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+                Assigned Assets
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Company property assigned to {emp.name} — laptop, phone, and other equipment.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={openAddAsset}
+              className="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Assign Asset
+            </button>
+          </div>
+
+          {assets.length === 0 ? (
+            <div className="py-12 text-center text-xs text-slate-400 space-y-2">
+              <Laptop className="w-8 h-8 mx-auto text-slate-300 dark:text-slate-600" />
+              <p>No assets assigned to this employee yet.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {assets.map((asset) => (
+                <div
+                  key={asset._id}
+                  className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-xl bg-brand-500/10 text-brand-600 dark:text-brand-400 flex items-center justify-center shrink-0">
+                      <Laptop className="w-5 h-5" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                        {asset.title}
+                      </div>
+                      <div className="flex items-center gap-2 mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+                        <span className="font-medium px-1.5 py-0.2 rounded bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                          {asset.assetType}
+                        </span>
+                        <span className="flex items-center gap-0.5">
+                          <Hash className="w-3 h-3" />
+                          {asset.assetNumber}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Tooltip label="Edit asset" side="top">
+                      <button aria-label="Edit asset"
+                        type="button"
+                        onClick={() => openEditAsset(asset)}
+                        className="p-1 rounded-lg text-slate-400 hover:text-brand-500 transition-colors"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </button>
+                    </Tooltip>
+                    <Tooltip label="Remove asset" side="top">
+                      <button aria-label="Remove asset"
+                        type="button"
+                        onClick={() => handleDeleteAsset(asset._id)}
+                        className="p-1 rounded-lg text-slate-400 hover:text-rose-500 transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </Tooltip>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* ADD/EDIT ASSET MODAL */}
+          {showAssetModal && (
+            <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+              <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 max-w-md w-full shadow-soft space-y-4">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-base font-bold text-slate-900 dark:text-white">
+                    {editingAsset ? `Edit Asset` : `Assign Asset to ${emp.name}`}
+                  </h4>
+                  <Tooltip label="Close" side="left">
+                    <button aria-label="Close"
+                      type="button"
+                      onClick={() => { setShowAssetModal(false); setEditingAsset(null); }}
+                      className="p-1 rounded-lg text-slate-400 hover:text-white"
+                    >
+                      <XCircle className="w-5 h-5" />
+                    </button>
+                  </Tooltip>
+                </div>
+
+                <form onSubmit={handleAssetSubmit} className="space-y-3.5 text-xs">
+                  <div>
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Asset Title *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={assetForm.title}
+                      onChange={(e) => setAssetForm({ ...assetForm, title: e.target.value })}
+                      placeholder="e.g. Dell Latitude 5420 Laptop"
+                      className="theme-input w-full"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Asset Number *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={assetForm.assetNumber}
+                      onChange={(e) => setAssetForm({ ...assetForm, assetNumber: e.target.value })}
+                      placeholder="e.g. Serial / Asset Tag Number"
+                      className="theme-input w-full"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Asset Type *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      list="admin-asset-type-suggestions"
+                      value={assetForm.assetType}
+                      onChange={(e) => setAssetForm({ ...assetForm, assetType: e.target.value })}
+                      placeholder="e.g. Laptop, Mobile Phone, Monitor"
+                      className="theme-input w-full"
+                    />
+                    <datalist id="admin-asset-type-suggestions">
+                      <option value="Laptop" />
+                      <option value="Mobile Phone" />
+                      <option value="Monitor" />
+                      <option value="Keyboard" />
+                      <option value="Mouse" />
+                      <option value="Headset" />
+                      <option value="SIM Card" />
+                    </datalist>
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => { setShowAssetModal(false); setEditingAsset(null); }}
+                      className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={assetSubmitting}
+                      className="px-4 py-2 rounded-xl bg-brand-600 text-white font-bold hover:bg-brand-500 disabled:opacity-50"
+                    >
+                      {assetSubmitting ? 'Saving...' : editingAsset ? 'Save Changes' : 'Assign Asset'}
                     </button>
                   </div>
                 </form>

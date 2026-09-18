@@ -6,6 +6,7 @@ import {
   CalendarDays,
   DollarSign,
   FileText,
+  Laptop,
   X,
   Eye,
   ShieldAlert,
@@ -27,6 +28,7 @@ const EmployeeContextBanner = ({ onTabChange }) => {
     { id: 'leaves', label: 'Leaves', icon: CalendarDays },
     { id: 'payroll', label: 'Payroll', icon: DollarSign },
     { id: 'documents', label: 'Documents', icon: FileText },
+    { id: 'assets', label: 'Assets', icon: Laptop },
   ];
 
   const handleTabClick = (tabId) => {

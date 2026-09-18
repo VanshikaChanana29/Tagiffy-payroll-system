@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { format } from 'date-fns';
 import AdminEmployeeSwitcher from '../admin/AdminEmployeeSwitcher';
+import NotificationBell from './NotificationBell';
 import Tooltip from '../common/Tooltip';
 
 const Topbar = ({ onMenuClick }) => {
@@ -51,6 +52,8 @@ const Topbar = ({ onMenuClick }) => {
       {/* Right: context switcher, clock, theme, role, profile */}
       <div className="flex items-center gap-2 sm:gap-3">
         {isAdmin && <AdminEmployeeSwitcher />}
+
+        <NotificationBell />
 
         <Tooltip label="Current server date and time" side="bottom">
           <span className="hidden md:inline-flex items-center px-2.5 py-1.5 rounded-lg

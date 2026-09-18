@@ -1030,8 +1030,9 @@ const EmployeeDirectoryPage = () => {
                 <div>
                   <div className="font-semibold text-slate-800 dark:text-slate-200">1. Download the template</div>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                    Fill in Name, Email, Department, and Designation for each employee. Role, Phone,
-                    Joining Date, Annual CTC, Reporting Manager Email, and Password are optional.
+                    Fill in Name and Email for each employee. Emp.code, DOJ, Contact No., Salary,
+                    Account no., IFSC code, and Bank name are optional — Department and Designation
+                    are assigned manually after upload.
                   </p>
                 </div>
                 <button

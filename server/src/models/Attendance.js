@@ -63,6 +63,8 @@ const attendanceSchema = new mongoose.Schema(
       accuracy: { type: Number, default: null },
       distanceMeters: { type: Number, default: null },
       isOutsideGeofence: { type: Boolean, default: false },
+      // Name of the nearest configured office, for display when there's more than one.
+      matchedLocationName: { type: String, default: '' },
     },
     checkOutLocation: {
       lat: { type: Number, default: null },
@@ -70,6 +72,7 @@ const attendanceSchema = new mongoose.Schema(
       accuracy: { type: Number, default: null },
       distanceMeters: { type: Number, default: null },
       isOutsideGeofence: { type: Boolean, default: false },
+      matchedLocationName: { type: String, default: '' },
     },
     remarks: {
       type: String,

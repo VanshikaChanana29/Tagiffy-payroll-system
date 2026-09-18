@@ -259,11 +259,15 @@ const login = async (req, res) => {
       });
     }
 
+    const isFirstLogin = !user.lastLoginAt;
+    user.lastLoginAt = new Date();
+    await user.save();
+
     const token = generateToken(user._id, user.role);
 
     res.status(200).json({
       success: true,
-      message: `Welcome back, ${user.name}!`,
+      message: isFirstLogin ? `Welcome, ${user.name}!` : `Welcome back, ${user.name}!`,
       token,
       user: {
         id: user._id,
@@ -277,6 +281,7 @@ const login = async (req, res) => {
         status: user.status,
         isVerified: user.isVerified,
         leaveBalance: user.leaveBalance,
+        isFirstLogin,
       },
     });
   } catch (error) {

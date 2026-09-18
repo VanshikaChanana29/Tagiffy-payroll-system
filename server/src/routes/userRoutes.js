@@ -5,6 +5,7 @@ const {
   getMyTeam,
   getEligibleManagers,
   getEmployeeById,
+  getTodaysBirthdays,
   createEmployee,
   downloadEmployeeTemplate,
   bulkUploadEmployees,
@@ -15,6 +16,10 @@ const {
   deleteUserDocument,
   downloadUserDocument,
   verifyUserDocument,
+  getUserAssets,
+  addUserAsset,
+  updateUserAsset,
+  deleteUserAsset,
   uploadUserAvatar,
   resetUserAvatar,
   previewSalaryBreakup,
@@ -30,6 +35,7 @@ router.use(protect);
 router.delete('/purge-database', authorize('admin'), clearAllData);
 
 router.get('/my-team', authorize('admin', 'manager'), getMyTeam);
+router.get('/birthdays/today', getTodaysBirthdays);
 
 router.route('/')
   .get(authorize('admin', 'manager'), getAllEmployees)
@@ -62,6 +68,14 @@ router.route('/:id/avatar')
   .delete(resetUserAvatar);
 router.delete('/:id/documents/:docId', deleteUserDocument);
 router.put('/:id/documents/:docId/status', authorize('admin'), verifyUserDocument);
+
+// Employee asset routes (laptop, phone, etc — HR can assign to anyone, employee can manage their own)
+router.route('/:id/assets')
+  .get(getUserAssets)
+  .post(addUserAsset);
+router.route('/:id/assets/:assetId')
+  .put(updateUserAsset)
+  .delete(deleteUserAsset);
 
 router.route('/:id')
   .get(getEmployeeById)

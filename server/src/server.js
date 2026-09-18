@@ -55,6 +55,7 @@ app.use('/api/designations', require('./routes/designationRoutes'));
 app.use('/api/org-settings', require('./routes/orgSettingsRoutes'));
 app.use('/api/payroll', require('./routes/payrollRoutes'));
 app.use('/api/holidays', require('./routes/holidayRoutes'));
+app.use('/api/notifications', require('./routes/notificationRoutes'));
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

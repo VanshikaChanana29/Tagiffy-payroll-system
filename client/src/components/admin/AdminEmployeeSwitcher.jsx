@@ -15,6 +15,7 @@ import {
   FileText,
   LayoutDashboard,
   Eye,
+  Laptop,
 } from 'lucide-react';
 import api from '../../api/client';
 import demoAvatars from '../../utils/avatars';
@@ -204,7 +205,7 @@ const AdminEmployeeSwitcher = () => {
                 </button>
               </div>
 
-              {/* 6 Quick Action Navigation Buttons */}
+              {/* 7 Quick Action Navigation Buttons */}
               <div className="grid grid-cols-3 gap-1.5 pt-1 text-[10px] font-semibold">
                 <button
                   type="button"
@@ -253,6 +254,14 @@ const AdminEmployeeSwitcher = () => {
                 >
                   <FileText className="w-3 h-3 text-brand-500 group-hover:text-white" />
                   <span>Documents</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleQuickTabJump('assets')}
+                  className="p-1.5 rounded-lg bg-white dark:bg-slate-900 hover:bg-brand-500 hover:text-white dark:hover:bg-brand-600 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 transition-all flex items-center justify-center gap-1 shadow-sm group"
+                >
+                  <Laptop className="w-3 h-3 text-brand-500 group-hover:text-white" />
+                  <span>Assets</span>
                 </button>
               </div>
             </div>

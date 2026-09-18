@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { NotificationProvider } from './context/NotificationContext';
 import { ToastProvider } from './context/ToastContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { EmployeeInspectionProvider } from './context/EmployeeInspectionContext';
@@ -48,6 +49,7 @@ function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
+        <NotificationProvider>
         <ToastProvider>
           <EmployeeInspectionProvider>
             <BrowserRouter>
@@ -97,6 +99,7 @@ function App() {
             </BrowserRouter>
           </EmployeeInspectionProvider>
         </ToastProvider>
+        </NotificationProvider>
       </AuthProvider>
     </ThemeProvider>
   );

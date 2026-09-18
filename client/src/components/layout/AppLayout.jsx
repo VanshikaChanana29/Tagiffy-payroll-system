@@ -3,6 +3,7 @@ import { Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Topbar from './Topbar';
 import EmployeeContextBanner from '../admin/EmployeeContextBanner';
+import BirthdayPopup from './BirthdayPopup';
 
 const AppLayout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -18,6 +19,7 @@ const AppLayout = () => {
           <Outlet />
         </main>
       </div>
+      <BirthdayPopup />
     </div>
   );
 };

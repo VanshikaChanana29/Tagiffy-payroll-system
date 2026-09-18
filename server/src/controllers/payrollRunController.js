@@ -7,6 +7,7 @@ const OrgSettings = require('../models/OrgSettings');
 const { isWorkingDay } = require('../utils/attendanceRules');
 const { getHolidayMap } = require('./holidayController');
 const { perDaySalary, round } = require('../utils/salaryStructure');
+const { notify } = require('../utils/notificationService');
 
 /**
  * Loss-of-pay days for one employee in one month.
@@ -263,6 +264,14 @@ const runPayroll = async (req, res) => {
       });
       await record.save();
       created.push(record);
+
+      notify({
+        recipients: [payslip.userId],
+        type: 'payslip_generated',
+        title: 'Payslip generated',
+        message: `Your payslip for ${payslip.month}/${payslip.year} is ready. Net pay: ₹${payslip.netSalary}.`,
+        relatedEntity: { kind: 'Salary', id: record._id },
+      });
     }
 
     res.status(201).json({

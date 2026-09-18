@@ -16,10 +16,14 @@ const { buildSalaryBreakup } = require('../utils/salaryStructure');
 const { getVisibleUserIds, getDirectReports } = require('../utils/teamScope');
 const { parseEmployeeSheet, buildEmployeeTemplateWorkbook } = require('../utils/bulkEmployeeImport');
 const { isAdminRole, isSuperAdmin } = require('../utils/roles');
+const { notify, getHrAndOwnerIds } = require('../utils/notificationService');
 
 // Documents belong to the employee or to HR — nobody else, ever.
 const canAccessDocuments = (req, employeeId) =>
   req.user._id.toString() === employeeId || isAdminRole(req.user.role);
+
+// Assets follow the same rule: the employee they're assigned to, or HR.
+const canAccessAssets = canAccessDocuments;
 
 // Remove the file backing a document, ignoring a file that is already gone.
 const removeStoredFile = (storedName) => {
@@ -204,6 +208,46 @@ const getEmployeeById = async (req, res) => {
   }
 };
 
+// @desc    Employees whose birthday is today, org-wide
+// @route   GET /api/users/birthdays/today
+// @access  Private (everyone — this is a team morale feature, not HR data)
+const getTodaysBirthdays = async (req, res) => {
+  try {
+    const employees = await User.find({
+      status: 'Active',
+      dateOfBirth: { $ne: null },
+    }).select('name employeeId department designation avatar dateOfBirth');
+
+    const today = new Date();
+    const todayMonth = today.getMonth();
+    const todayDate = today.getDate();
+
+    const birthdays = employees.filter((emp) => {
+      const dob = new Date(emp.dateOfBirth);
+      return dob.getMonth() === todayMonth && dob.getDate() === todayDate;
+    });
+
+    res.status(200).json({
+      success: true,
+      birthdays: birthdays.map((emp) => ({
+        _id: emp._id,
+        name: emp.name,
+        employeeId: emp.employeeId,
+        department: emp.department,
+        designation: emp.designation,
+        avatar: emp.avatar,
+      })),
+    });
+  } catch (error) {
+    console.error('Get Todays Birthdays Error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch birthdays',
+      error: error.message,
+    });
+  }
+};
+
 // @desc    Create/Onboard a new employee
 // @route   POST /api/users
 // @access  Private (Admin only)
@@ -219,6 +263,7 @@ const createEmployee = async (req, res) => {
       reportingManager,
       phone,
       joiningDate,
+      dateOfBirth,
       avatar,
       address,
       emergencyContact,
@@ -279,6 +324,7 @@ const createEmployee = async (req, res) => {
       reportingManager: reportingManager || null,
       phone: phone || '',
       joiningDate: joiningDate ? new Date(joiningDate) : new Date(),
+      dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
       avatar: avatar || buildInitialsAvatar(name, email),
       status: 'Active',
       isVerified: true,
@@ -421,15 +467,19 @@ const bulkUploadEmployees = async (req, res) => {
     for (const { rowNumber, data } of rows) {
       const name = (data.name || '').toString().trim();
       const email = (data.email || '').toString().trim().toLowerCase();
+      // Department and Designation aren't collected via bulk upload — HR
+      // assigns them manually afterwards, so new rows fall back to the
+      // schema defaults ('General' / 'Team Member') unless a legacy sheet
+      // still carries these columns.
       const department = (data.department || '').toString().trim();
       const designation = (data.designation || '').toString().trim();
 
       const fail = (message) => failed.push({ row: rowNumber, name, email, reason: message });
 
-      if (!name && !email && !department && !designation) continue; // fully blank row
+      if (!name && !email) continue; // fully blank row
 
-      if (!name || !email || !department || !designation) {
-        fail('Name, Email, Department, and Designation are all required.');
+      if (!name || !email) {
+        fail('Name and Email are required.');
         continue;
       }
 
@@ -447,15 +497,21 @@ const bulkUploadEmployees = async (req, res) => {
         continue;
       }
 
-      const canonicalDept = departmentByLower.get(department.toLowerCase());
-      if (!canonicalDept) {
-        fail(`Department '${department}' does not exist. Please create it first in Org Settings.`);
-        continue;
+      let canonicalDept;
+      if (department) {
+        canonicalDept = departmentByLower.get(department.toLowerCase());
+        if (!canonicalDept) {
+          fail(`Department '${department}' does not exist. Please create it first in Org Settings.`);
+          continue;
+        }
       }
-      const canonicalDesig = designationByLower.get(designation.toLowerCase());
-      if (!canonicalDesig) {
-        fail(`Designation '${designation}' does not exist. Please create it first in Org Settings.`);
-        continue;
+      let canonicalDesig;
+      if (designation) {
+        canonicalDesig = designationByLower.get(designation.toLowerCase());
+        if (!canonicalDesig) {
+          fail(`Designation '${designation}' does not exist. Please create it first in Org Settings.`);
+          continue;
+        }
       }
 
       let role = (data.role || 'employee').toString().trim().toLowerCase();
@@ -485,7 +541,20 @@ const bulkUploadEmployees = async (req, res) => {
         continue;
       }
 
-      const employeeId = allocateEmployeeId();
+      // Emp.code from the sheet wins over an auto-generated id, so uploads
+      // that already carry a company employee code keep it.
+      const sheetEmployeeId = (data.employeeId || '').toString().trim().toUpperCase();
+      let employeeId;
+      if (sheetEmployeeId) {
+        if (usedEmployeeIds.has(sheetEmployeeId)) {
+          fail(`Employee code '${sheetEmployeeId}' already exists or is duplicated in this file.`);
+          continue;
+        }
+        employeeId = sheetEmployeeId;
+        usedEmployeeIds.add(employeeId);
+      } else {
+        employeeId = allocateEmployeeId();
+      }
       const password = (data.password || '').toString().trim() || 'employee123';
 
       try {
@@ -495,8 +564,8 @@ const bulkUploadEmployees = async (req, res) => {
           email,
           password,
           role,
-          department: canonicalDept,
-          designation: canonicalDesig,
+          ...(canonicalDept && { department: canonicalDept }),
+          ...(canonicalDesig && { designation: canonicalDesig }),
           reportingManager,
           phone: (data.phone || '').toString().trim(),
           joiningDate,
@@ -504,6 +573,11 @@ const bulkUploadEmployees = async (req, res) => {
           status: 'Active',
           isVerified: true,
           leaveBalance: { paid: 14, sick: 7, unpaid: 0 },
+          bankDetails: {
+            accountNumber: (data.accountNumber || '').toString().trim(),
+            ifscCode: (data.ifscCode || '').toString().trim().toUpperCase(),
+            bankName: (data.bankName || '').toString().trim(),
+          },
         });
 
         const annualCtc = Number(data.annualCtc);
@@ -567,9 +641,10 @@ const updateEmployee = async (req, res) => {
 
     // Fields employee is allowed to edit for themselves
     if (isSelf && !isAdmin) {
-      const { phone, address, emergencyContact, avatar } = req.body;
+      const { phone, address, emergencyContact, avatar, dateOfBirth } = req.body;
       if (phone !== undefined) employee.phone = phone;
       if (avatar !== undefined) employee.avatar = avatar;
+      if (dateOfBirth !== undefined) employee.dateOfBirth = dateOfBirth ? new Date(dateOfBirth) : null;
       if (address) employee.address = { ...employee.address, ...address };
       if (emergencyContact)
         employee.emergencyContact = { ...employee.emergencyContact, ...emergencyContact };
@@ -599,6 +674,7 @@ const updateEmployee = async (req, res) => {
         emergencyContact,
         leaveBalance,
         joiningDate,
+        dateOfBirth,
       } = req.body;
 
       if (department || designation) {
@@ -634,6 +710,7 @@ const updateEmployee = async (req, res) => {
       if (status) employee.status = status;
       if (avatar) employee.avatar = avatar;
       if (joiningDate) employee.joiningDate = new Date(joiningDate);
+      if (dateOfBirth !== undefined) employee.dateOfBirth = dateOfBirth ? new Date(dateOfBirth) : null;
       if (address) employee.address = { ...employee.address, ...address };
       if (emergencyContact)
         employee.emergencyContact = { ...employee.emergencyContact, ...emergencyContact };
@@ -802,6 +879,15 @@ const addUserDocument = async (req, res) => {
     employee.documents.push(newDoc);
     await employee.save();
 
+    const savedDoc = employee.documents[employee.documents.length - 1];
+    notify({
+      recipients: await getHrAndOwnerIds(),
+      type: 'document_uploaded',
+      title: 'New document uploaded',
+      message: `${employee.name} uploaded ${newDoc.name} (${newDoc.type}). Awaiting verification.`,
+      relatedEntity: { kind: 'UserDocument', id: savedDoc._id },
+    });
+
     res.status(201).json({
       success: true,
       message: `${newDoc.name} uploaded successfully (${newDoc.fileSize}). Awaiting HR verification.`,
@@ -964,6 +1050,19 @@ const verifyUserDocument = async (req, res) => {
 
     await employee.save();
 
+    if (status === 'Verified' || status === 'Rejected') {
+      notify({
+        recipients: [employee._id],
+        type: status === 'Verified' ? 'document_verified' : 'document_rejected',
+        title: `Document ${status.toLowerCase()}`,
+        message:
+          status === 'Verified'
+            ? `Your document "${doc.name}" has been verified.`
+            : `Your document "${doc.name}" was rejected: ${doc.rejectionReason}`,
+        relatedEntity: { kind: 'UserDocument', id: doc._id },
+      });
+    }
+
     res.status(200).json({
       success: true,
       message: `Document marked as ${status} by ${req.user.name}`,
@@ -975,6 +1074,203 @@ const verifyUserDocument = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to update document status',
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Get employee assets
+// @route   GET /api/users/:id/assets
+// @access  Private (Self or Admin)
+const getUserAssets = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!canAccessAssets(req, id)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Forbidden. You can only view your own assets.',
+      });
+    }
+
+    const employee = await User.findById(id);
+    if (!employee) {
+      return res.status(404).json({ success: false, message: 'Employee not found' });
+    }
+
+    res.status(200).json({
+      success: true,
+      assets: employee.assets || [],
+    });
+  } catch (error) {
+    console.error('Get Assets Error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve assets',
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Assign an asset (laptop, phone, etc) to an employee
+// @route   POST /api/users/:id/assets
+// @access  Private (Self or Admin)
+const addUserAsset = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!canAccessAssets(req, id)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Forbidden. You can only add assets to your own profile.',
+      });
+    }
+
+    const { title, assetNumber, assetType } = req.body;
+    if (!title?.trim() || !assetNumber?.trim() || !assetType?.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide the asset title, asset number, and asset type.',
+      });
+    }
+
+    const employee = await User.findById(id);
+    if (!employee) {
+      return res.status(404).json({ success: false, message: 'Employee not found' });
+    }
+
+    const newAsset = {
+      title: title.trim(),
+      assetNumber: assetNumber.trim(),
+      assetType: assetType.trim(),
+      assignedBy: req.user._id,
+      assignedByName: req.user.name,
+      createdAt: new Date(),
+    };
+
+    if (!employee.assets) employee.assets = [];
+    employee.assets.push(newAsset);
+    await employee.save();
+
+    res.status(201).json({
+      success: true,
+      message: `${newAsset.title} added to ${employee.name}'s assets`,
+      asset: employee.assets[employee.assets.length - 1],
+      assets: employee.assets,
+    });
+  } catch (error) {
+    console.error('Add Asset Error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to add asset',
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Update an employee asset
+// @route   PUT /api/users/:id/assets/:assetId
+// @access  Private (Self or Admin)
+const updateUserAsset = async (req, res) => {
+  try {
+    const { id, assetId } = req.params;
+
+    if (!canAccessAssets(req, id)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Forbidden. You can only manage your own assets.',
+      });
+    }
+
+    const { title, assetNumber, assetType } = req.body;
+
+    const employee = await User.findById(id);
+    if (!employee) {
+      return res.status(404).json({ success: false, message: 'Employee not found' });
+    }
+
+    const asset = (employee.assets || []).find((a) => a._id.toString() === assetId);
+    if (!asset) {
+      return res.status(404).json({ success: false, message: 'Asset not found' });
+    }
+
+    if (title !== undefined) {
+      if (!title.trim()) {
+        return res.status(400).json({ success: false, message: 'Asset title cannot be empty.' });
+      }
+      asset.title = title.trim();
+    }
+    if (assetNumber !== undefined) {
+      if (!assetNumber.trim()) {
+        return res.status(400).json({ success: false, message: 'Asset number cannot be empty.' });
+      }
+      asset.assetNumber = assetNumber.trim();
+    }
+    if (assetType !== undefined) {
+      if (!assetType.trim()) {
+        return res.status(400).json({ success: false, message: 'Asset type cannot be empty.' });
+      }
+      asset.assetType = assetType.trim();
+    }
+    asset.updatedBy = req.user._id;
+    asset.updatedByName = req.user.name;
+    asset.updatedAt = new Date();
+
+    await employee.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Asset updated successfully',
+      asset,
+      assets: employee.assets,
+    });
+  } catch (error) {
+    console.error('Update Asset Error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update asset',
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Remove an employee asset
+// @route   DELETE /api/users/:id/assets/:assetId
+// @access  Private (Self or Admin)
+const deleteUserAsset = async (req, res) => {
+  try {
+    const { id, assetId } = req.params;
+
+    if (!canAccessAssets(req, id)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Forbidden. You can only manage your own assets.',
+      });
+    }
+
+    const employee = await User.findById(id);
+    if (!employee) {
+      return res.status(404).json({ success: false, message: 'Employee not found' });
+    }
+
+    const asset = (employee.assets || []).find((a) => a._id.toString() === assetId);
+    if (!asset) {
+      return res.status(404).json({ success: false, message: 'Asset not found' });
+    }
+
+    employee.assets = employee.assets.filter((a) => a._id.toString() !== assetId);
+    await employee.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Asset removed successfully',
+      assets: employee.assets,
+    });
+  } catch (error) {
+    console.error('Delete Asset Error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to delete asset',
       error: error.message,
     });
   }
@@ -1285,6 +1581,7 @@ module.exports = {
   getMyTeam,
   getEligibleManagers,
   getEmployeeById,
+  getTodaysBirthdays,
   createEmployee,
   downloadEmployeeTemplate,
   bulkUploadEmployees,
@@ -1295,6 +1592,10 @@ module.exports = {
   deleteUserDocument,
   downloadUserDocument,
   verifyUserDocument,
+  getUserAssets,
+  addUserAsset,
+  updateUserAsset,
+  deleteUserAsset,
   uploadUserAvatar,
   resetUserAvatar,
   previewSalaryBreakup,

@@ -35,6 +35,7 @@ const updateOrgSettings = async (req, res) => {
       salaryStructure,
       officeLocation,
       geofenceRadiusMeters,
+      officeLocations,
     } = req.body;
 
     const settings = await OrgSettings.getSettings();
@@ -160,6 +161,48 @@ const updateOrgSettings = async (req, res) => {
         });
       }
       settings.geofenceRadiusMeters = radius;
+    }
+
+    if (officeLocations !== undefined) {
+      if (!Array.isArray(officeLocations)) {
+        return res.status(400).json({
+          success: false,
+          message: 'officeLocations must be a list of office sites.',
+        });
+      }
+
+      const cleaned = [];
+      for (const loc of officeLocations) {
+        const label = (loc?.name || '').toString().trim() || `Office ${cleaned.length + 1}`;
+        const lat = Number(loc?.lat);
+        const lng = Number(loc?.lng);
+        const isValidLat = Number.isFinite(lat) && lat >= -90 && lat <= 90;
+        const isValidLng = Number.isFinite(lng) && lng >= -180 && lng <= 180;
+        if (!isValidLat || !isValidLng) {
+          return res.status(400).json({
+            success: false,
+            message: `"${label}" needs a valid latitude and longitude.`,
+          });
+        }
+
+        const radiusMeters = Number(loc?.radiusMeters);
+        if (Number.isNaN(radiusMeters) || radiusMeters < 20) {
+          return res.status(400).json({
+            success: false,
+            message: `"${label}" needs a geofence radius of at least 20 meters.`,
+          });
+        }
+
+        cleaned.push({
+          name: label,
+          lat,
+          lng,
+          address: loc?.address ? String(loc.address).trim() : '',
+          radiusMeters,
+        });
+      }
+
+      settings.officeLocations = cleaned;
     }
 
     await settings.save();

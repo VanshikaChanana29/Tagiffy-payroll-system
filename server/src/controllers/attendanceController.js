@@ -8,6 +8,7 @@ const { getVisibleUserIds, canManageEmployee } = require('../utils/teamScope');
 const { isAdminRole } = require('../utils/roles');
 const { getHolidayMap } = require('./holidayController');
 const { buildPunchLocation, formatDistanceMeters } = require('../utils/geo');
+const { notify, getEscalationRecipientIds } = require('../utils/notificationService');
 const { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, eachDayOfInterval, subDays } = require('date-fns');
 
 // Helper to get formatted date string YYYY-MM-DD
@@ -117,9 +118,24 @@ const checkIn = async (req, res) => {
 
     await attendance.save();
 
+    const nearestOfficeNote = checkInLocation?.matchedLocationName
+      ? ` from ${checkInLocation.matchedLocationName}`
+      : ' from office';
     const awayNote = checkInLocation?.isOutsideGeofence
-      ? ` · ${formatDistanceMeters(checkInLocation.distanceMeters)} away from office`
+      ? ` · ${formatDistanceMeters(checkInLocation.distanceMeters)} away${nearestOfficeNote}`
       : '';
+
+    if (checkInLocation?.isOutsideGeofence) {
+      notify({
+        recipients: await getEscalationRecipientIds(req.user),
+        type: 'attendance_outside_geofence',
+        title: 'Punch-in outside office location',
+        message: `${req.user.name} checked in ${formatDistanceMeters(
+          checkInLocation.distanceMeters
+        )} away${nearestOfficeNote} at ${format(attendance.checkIn, 'hh:mm a')}.`,
+        relatedEntity: { kind: 'Attendance', id: attendance._id },
+      });
+    }
 
     res.status(200).json({
       success: true,
@@ -187,6 +203,21 @@ const checkOut = async (req, res) => {
     }
 
     await attendance.save();
+
+    if (checkOutLocation?.isOutsideGeofence) {
+      const nearestOfficeNote = checkOutLocation.matchedLocationName
+        ? ` from ${checkOutLocation.matchedLocationName}`
+        : ' from office';
+      notify({
+        recipients: await getEscalationRecipientIds(req.user),
+        type: 'attendance_outside_geofence',
+        title: 'Punch-out outside office location',
+        message: `${req.user.name} checked out ${formatDistanceMeters(
+          checkOutLocation.distanceMeters
+        )} away${nearestOfficeNote} at ${format(checkOutTime, 'hh:mm a')}.`,
+        relatedEntity: { kind: 'Attendance', id: attendance._id },
+      });
+    }
 
     res.status(200).json({
       success: true,
@@ -724,6 +755,14 @@ const createRegularizationRequest = async (req, res) => {
       reason: reason.trim(),
     });
 
+    notify({
+      recipients: await getEscalationRecipientIds(req.user),
+      type: 'regularization_requested',
+      title: 'Attendance correction requested',
+      message: `${req.user.name} requested an attendance correction for ${date}.`,
+      relatedEntity: { kind: 'AttendanceRequest', id: request._id },
+    });
+
     res.status(201).json({
       success: true,
       message: `Correction request for ${date} submitted for HR approval.`,
@@ -833,7 +872,7 @@ const reviewRegularizationRequest = async (req, res) => {
       });
     }
 
-    const request = await AttendanceRequest.findById(id).populate('userId', 'name');
+    const request = await AttendanceRequest.findById(id).populate('userId', 'name reportingManager role');
     if (!request) {
       return res.status(404).json({ success: false, message: 'Correction request not found' });
     }
@@ -902,6 +941,17 @@ const reviewRegularizationRequest = async (req, res) => {
     request.reviewedBy = req.user._id;
     request.reviewedAt = new Date();
     await request.save();
+
+    notify({
+      recipients: [request.userId._id],
+      type: status === 'Approved' ? 'regularization_approved' : 'regularization_rejected',
+      title: `Attendance correction ${status.toLowerCase()}`,
+      message:
+        status === 'Approved'
+          ? `Your attendance correction for ${request.date} has been approved.`
+          : `Your attendance correction for ${request.date} was rejected: ${adminComment.trim()}`,
+      relatedEntity: { kind: 'AttendanceRequest', id: request._id },
+    });
 
     res.status(200).json({
       success: true,
