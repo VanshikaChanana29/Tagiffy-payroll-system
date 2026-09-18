@@ -31,11 +31,13 @@ const isValidCoordinate = (lat, lng) =>
 // multi-location support existed and haven't re-saved it since.
 const getConfiguredOffices = (settings) => {
   const list = Array.isArray(settings?.officeLocations) ? settings.officeLocations : [];
-  const valid = list.filter((loc) => isValidCoordinate(Number(loc.lat), Number(loc.lng)));
+  const valid = list.filter(
+    (loc) => loc?.lat != null && loc?.lng != null && isValidCoordinate(Number(loc.lat), Number(loc.lng))
+  );
   if (valid.length > 0) return valid;
 
   const legacy = settings?.officeLocation;
-  if (legacy && isValidCoordinate(Number(legacy.lat), Number(legacy.lng))) {
+  if (legacy && legacy.lat != null && legacy.lng != null && isValidCoordinate(Number(legacy.lat), Number(legacy.lng))) {
     return [
       {
         name: legacy.address || 'Office',
