@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Bell, CheckCheck, CalendarClock, MapPinOff, FileText, Wallet, ClipboardCheck } from 'lucide-react';
+import { Bell, CheckCheck, CalendarClock, MapPinOff, FileText, Wallet, ClipboardCheck, Clock } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { useNotifications } from '../../context/NotificationContext';
 import Tooltip from '../common/Tooltip';
@@ -13,6 +13,7 @@ const ICONS_BY_TYPE = {
   regularization_approved: ClipboardCheck,
   regularization_rejected: ClipboardCheck,
   attendance_outside_geofence: MapPinOff,
+  attendance_late: Clock,
   document_uploaded: FileText,
   document_verified: FileText,
   document_rejected: FileText,

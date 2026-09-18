@@ -137,6 +137,19 @@ const checkIn = async (req, res) => {
       });
     }
 
+    if (attendance.isLate) {
+      notify({
+        recipients: await getEscalationRecipientIds(req.user),
+        type: 'attendance_late',
+        title: 'Late punch-in',
+        message: `${req.user.name} checked in late by ${attendance.lateMinutes} min, at ${format(
+          attendance.checkIn,
+          'hh:mm a'
+        )}.`,
+        relatedEntity: { kind: 'Attendance', id: attendance._id },
+      });
+    }
+
     res.status(200).json({
       success: true,
       message: `Punch-in recorded at ${format(attendance.checkIn, 'hh:mm a')} (${workMode})${
