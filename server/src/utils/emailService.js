@@ -1,4 +1,5 @@
 const nodemailer = require('nodemailer');
+const dns = require('dns').promises;
 
 // Email clients don't run Tailwind/external CSS, so this is a plain
 // inline-styled table layout — the safest thing that renders consistently
@@ -30,29 +31,46 @@ const buildEmailHtml = ({ subject, text }) => `
   </body>
 </html>`;
 
-let transporter = null;
 let warnedNotConfigured = false;
 
 const isConfigured = () =>
   Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
 
-const getTransporter = () => {
-  if (transporter) return transporter;
-  transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
+/**
+ * nodemailer resolves both A and AAAA records for the SMTP host and picks
+ * one at random to connect to (see its shared/resolveHostname). On hosts
+ * with no outbound IPv6 route (e.g. Render), every AAAA pick fails with
+ * ENETUNREACH — so mail only got through on the ~1-in-N tries that happened
+ * to land on an IPv4 address.
+ *
+ * Resolving the A record ourselves and connecting to that literal IP makes
+ * nodemailer skip its own dual-stack resolution entirely (it only resolves
+ * hostnames, not IPs). `servername` is set explicitly so TLS still validates
+ * the certificate against the real hostname instead of the bare IP.
+ * Re-resolved on every send rather than cached, since a fresh transporter
+ * per send costs one extra DNS lookup but stays correct if Gmail's IP ever
+ * changes — cheaper than debugging a stale-IP failure months from now.
+ */
+const buildTransporter = async () => {
+  const host = process.env.SMTP_HOST;
+  let connectHost = host;
+  try {
+    const addresses = await dns.resolve4(host);
+    if (addresses?.[0]) connectHost = addresses[0];
+  } catch (err) {
+    console.warn(`✉️  Could not resolve ${host} to an IPv4 address, falling back to hostname:`, err.message);
+  }
+
+  return nodemailer.createTransport({
+    host: connectHost,
+    servername: host,
     port: Number(process.env.SMTP_PORT) || 587,
     secure: Number(process.env.SMTP_PORT) === 465,
     auth: {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS,
     },
-    // Some hosts (e.g. Render) have no outbound IPv6 route, but Gmail's SMTP
-    // hostname resolves to an IPv6 address first — that attempt fails with
-    // ENETUNREACH before ever falling back to IPv4. Forcing IPv4 here skips
-    // the broken path entirely.
-    family: 4,
   });
-  return transporter;
 };
 
 /**
@@ -76,7 +94,8 @@ const sendEmail = async ({ to, subject, text, html }) => {
   }
 
   try {
-    await getTransporter().sendMail({
+    const transporter = await buildTransporter();
+    await transporter.sendMail({
       from: process.env.EMAIL_FROM || process.env.SMTP_USER,
       to,
       subject,
