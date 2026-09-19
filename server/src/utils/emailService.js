@@ -46,6 +46,11 @@ const getTransporter = () => {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS,
     },
+    // Some hosts (e.g. Render) have no outbound IPv6 route, but Gmail's SMTP
+    // hostname resolves to an IPv6 address first — that attempt fails with
+    // ENETUNREACH before ever falling back to IPv4. Forcing IPv4 here skips
+    // the broken path entirely.
+    family: 4,
   });
   return transporter;
 };
