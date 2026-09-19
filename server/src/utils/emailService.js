@@ -1,6 +1,3 @@
-const nodemailer = require('nodemailer');
-const dns = require('dns').promises;
-
 // Email clients don't run Tailwind/external CSS, so this is a plain
 // inline-styled table layout — the safest thing that renders consistently
 // across Gmail, Outlook, and mobile mail apps.
@@ -33,51 +30,17 @@ const buildEmailHtml = ({ subject, text }) => `
 
 let warnedNotConfigured = false;
 
-const isConfigured = () =>
-  Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+const isConfigured = () => Boolean(process.env.BREVO_API_KEY && process.env.EMAIL_FROM);
 
 /**
- * nodemailer resolves both A and AAAA records for the SMTP host and picks
- * one at random to connect to (see its shared/resolveHostname). On hosts
- * with no outbound IPv6 route (e.g. Render), every AAAA pick fails with
- * ENETUNREACH — so mail only got through on the ~1-in-N tries that happened
- * to land on an IPv4 address.
+ * Sends via Brevo's transactional email HTTP API instead of raw SMTP.
  *
- * Resolving the A record ourselves and connecting to that literal IP makes
- * nodemailer skip its own dual-stack resolution entirely (it only resolves
- * hostnames, not IPs). `servername` is set explicitly so TLS still validates
- * the certificate against the real hostname instead of the bare IP.
- * Re-resolved on every send rather than cached, since a fresh transporter
- * per send costs one extra DNS lookup but stays correct if Gmail's IP ever
- * changes — cheaper than debugging a stale-IP failure months from now.
- */
-const buildTransporter = async () => {
-  const host = process.env.SMTP_HOST;
-  let connectHost = host;
-  try {
-    const addresses = await dns.resolve4(host);
-    if (addresses?.[0]) connectHost = addresses[0];
-  } catch (err) {
-    console.warn(`✉️  Could not resolve ${host} to an IPv4 address, falling back to hostname:`, err.message);
-  }
-
-  return nodemailer.createTransport({
-    host: connectHost,
-    servername: host,
-    port: Number(process.env.SMTP_PORT) || 587,
-    secure: Number(process.env.SMTP_PORT) === 465,
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
-    },
-  });
-};
-
-/**
- * Sends a notification email. Never throws — a misconfigured or unreachable
- * SMTP server must not break the request that triggered the notification.
- * Until SMTP_HOST/SMTP_USER/SMTP_PASS are set in .env, this is a no-op that
- * logs a single warning so the gap is visible without spamming the console.
+ * Raw Gmail SMTP (port 587) turned out to be unreliable from Render: its
+ * host resolves to both an IPv4 and IPv6 address, Render has no outbound
+ * IPv6 route (instant ENETUNREACH on that pick), and even a forced IPv4
+ * connection then just hung until timeout — Render's network doesn't
+ * reliably carry outbound SMTP at all. Brevo's API runs over plain HTTPS
+ * (port 443), which isn't affected by any of that.
  */
 const sendEmail = async ({ to, subject, text, html }) => {
   if (!to) return false;
@@ -85,8 +48,8 @@ const sendEmail = async ({ to, subject, text, html }) => {
   if (!isConfigured()) {
     if (!warnedNotConfigured) {
       console.warn(
-        '✉️  Email not sent — SMTP_HOST/SMTP_USER/SMTP_PASS are not set in .env. ' +
-          'In-app notifications still work; add SMTP credentials to enable email.'
+        '✉️  Email not sent — BREVO_API_KEY/EMAIL_FROM are not set in .env. ' +
+          'In-app notifications still work; add Brevo credentials to enable email.'
       );
       warnedNotConfigured = true;
     }
@@ -94,14 +57,27 @@ const sendEmail = async ({ to, subject, text, html }) => {
   }
 
   try {
-    const transporter = await buildTransporter();
-    await transporter.sendMail({
-      from: process.env.EMAIL_FROM || process.env.SMTP_USER,
-      to,
-      subject,
-      text,
-      html: html || buildEmailHtml({ subject, text }),
+    const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: {
+        accept: 'application/json',
+        'content-type': 'application/json',
+        'api-key': process.env.BREVO_API_KEY,
+      },
+      body: JSON.stringify({
+        sender: { name: 'Taggify HRMS', email: process.env.EMAIL_FROM },
+        to: [{ email: to }],
+        subject,
+        textContent: text,
+        htmlContent: html || buildEmailHtml({ subject, text }),
+      }),
     });
+
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`Brevo API ${res.status}: ${body}`);
+    }
+
     return true;
   } catch (err) {
     console.error('✉️  Failed to send notification email:', err.message);
