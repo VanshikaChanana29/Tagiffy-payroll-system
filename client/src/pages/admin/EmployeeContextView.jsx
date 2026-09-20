@@ -126,6 +126,7 @@ const EmployeeContextView = () => {
             relation: u.emergencyContact?.relation || '',
             phone: u.emergencyContact?.phone || '',
           },
+          weeklyOffDays: Array.isArray(u.weeklyOffDays) ? u.weeklyOffDays : [],
         });
       }
 
@@ -842,6 +843,55 @@ const EmployeeContextView = () => {
                   <option value="Inactive">Inactive</option>
                   <option value="On Leave">On Leave</option>
                 </select>
+              </div>
+            </div>
+
+            {/* Weekly Off Days — HR sets this per person any time after onboarding, since
+                different offices/roles run different week schedules (e.g. only Sunday off
+                instead of the usual Saturday+Sunday). Leaving nothing selected falls back
+                to the organisation's default weekly off from Org Settings. */}
+            <div className="pt-4 border-t border-slate-200 dark:border-slate-800 text-xs">
+              <h4 className="font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-1">
+                <CalendarDays className="w-4 h-4 text-brand-500" />
+                Weekly Off Days
+              </h4>
+              <p className="text-slate-500 dark:text-slate-400 mb-3">
+                Pick this employee's paid weekly off. Leave nothing selected to use the
+                organisation's default (set in Org Settings) instead.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { value: 0, label: 'Sun' },
+                  { value: 1, label: 'Mon' },
+                  { value: 2, label: 'Tue' },
+                  { value: 3, label: 'Wed' },
+                  { value: 4, label: 'Thu' },
+                  { value: 5, label: 'Fri' },
+                  { value: 6, label: 'Sat' },
+                ].map((day) => {
+                  const selected = (editFormData.weeklyOffDays || []).includes(day.value);
+                  return (
+                    <button
+                      key={day.value}
+                      type="button"
+                      disabled={!isEditingProfile}
+                      onClick={() => {
+                        const current = editFormData.weeklyOffDays || [];
+                        const next = selected
+                          ? current.filter((d) => d !== day.value)
+                          : [...current, day.value].sort();
+                        setEditFormData({ ...editFormData, weeklyOffDays: next });
+                      }}
+                      className={`px-3 py-1.5 rounded-lg font-semibold border transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${
+                        selected
+                          ? 'bg-brand-600 border-brand-600 text-white'
+                          : 'bg-white dark:bg-slate-950/60 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:border-brand-400'
+                      }`}
+                    >
+                      {day.label}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 

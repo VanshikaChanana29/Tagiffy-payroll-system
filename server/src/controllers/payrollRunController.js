@@ -35,7 +35,11 @@ const calculateLopDays = async (employee, monthStart, monthEnd, settings, holida
     const end = new Date(`${leave.endDate}T00:00:00`);
     while (cursor <= end) {
       const dateStr = format(cursor, 'yyyy-MM-dd');
-      if (dateStr >= fromStr && dateStr <= toStr && isWorkingDay(cursor, settings, holidayMap)) {
+      if (
+        dateStr >= fromStr &&
+        dateStr <= toStr &&
+        isWorkingDay(cursor, settings, holidayMap, employee.weeklyOffDays)
+      ) {
         lopDates.add(dateStr);
       }
       cursor.setDate(cursor.getDate() + 1);
@@ -82,7 +86,7 @@ const calculateLopDays = async (employee, monthStart, monthEnd, settings, holida
 
       // Skip non-working days, the future, days before joining, approved paid
       // leave, and days that already have an attendance record.
-      if (!isWorkingDay(day, settings, holidayMap)) return;
+      if (!isWorkingDay(day, settings, holidayMap, employee.weeklyOffDays)) return;
       if (day > today) return;
       if (joiningDate && day < joiningDate) return;
       if (paidLeaveDates.has(dateStr)) return;
@@ -112,7 +116,9 @@ const buildPayslipForEmployee = async (employee, month, year, settings) => {
 
   const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
   const calendarDays = days.length;
-  const workingDays = days.filter((d) => isWorkingDay(d, settings, holidayMap)).length;
+  const workingDays = days.filter((d) =>
+    isWorkingDay(d, settings, holidayMap, employee.weeklyOffDays)
+  ).length;
 
   const salary = employee.salary || {};
   const monthlyGross = Number(salary.monthlyGross) || 0;

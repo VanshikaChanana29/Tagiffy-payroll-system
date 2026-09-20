@@ -131,6 +131,16 @@ const userSchema = new mongoose.Schema(
       sick: { type: Number, default: 8 },
       unpaid: { type: Number, default: 0 },
     },
+
+    // Which days of the week are this employee's paid weekly off, e.g. [0, 6]
+    // for Sun+Sat or just [0] for a 6-day-week role (0 = Sunday ... 6 = Saturday).
+    // HR sets this per person after onboarding since different offices/roles
+    // run different week schedules. Empty means "use the org default"
+    // (OrgSettings.workingDays) instead of a personal override.
+    weeklyOffDays: {
+      type: [Number],
+      default: [],
+    },
     isVerified: {
       type: Boolean,
       default: false,

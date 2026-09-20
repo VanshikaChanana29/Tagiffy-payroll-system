@@ -9,6 +9,8 @@ const NOTIFICATION_TYPES = [
   'regularization_approved',
   'regularization_rejected',
   'attendance_outside_geofence',
+  'attendance_wfh_checkin',
+  'attendance_wfh_checkout',
   'attendance_late',
   'document_uploaded',
   'document_verified',

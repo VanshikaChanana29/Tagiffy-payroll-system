@@ -50,6 +50,7 @@ const resolveDayStatus = ({
   joiningDate,
   settings,
   now,
+  weeklyOffDays,
 }) => {
   if (joiningDate && date < joiningDate && dateStr !== format(joiningDate, 'yyyy-MM-dd')) {
     return 'Pre-joining';
@@ -63,7 +64,7 @@ const resolveDayStatus = ({
   // whether they have happened yet or not — a holiday next month should read as
   // "Holiday", not "Upcoming".
   if (holidayName) return 'Holiday';
-  if (!isWorkingDay(date, settings)) return 'Weekend';
+  if (!isWorkingDay(date, settings, null, weeklyOffDays)) return 'Weekend';
 
   const todayStr = getTodayDateStr();
   if (date > now && dateStr !== todayStr) return 'Upcoming';
@@ -125,7 +126,21 @@ const checkIn = async (req, res) => {
       ? ` · ${formatDistanceMeters(checkInLocation.distanceMeters)} away${nearestOfficeNote}`
       : '';
 
-    if (checkInLocation?.isOutsideGeofence) {
+    // Work From Home is just a selectable mode, not a violation — HR still
+    // gets told about it (with the geolocation distance for their records),
+    // but as a plain heads-up rather than the "outside geofence" alarm.
+    if (workMode === 'Remote') {
+      notify({
+        recipients: await getEscalationRecipientIds(req.user),
+        type: 'attendance_wfh_checkin',
+        title: 'Work From Home check-in',
+        message: `${req.user.name} checked in today from Work From Home at ${format(
+          attendance.checkIn,
+          'hh:mm a'
+        )}${awayNote}.`,
+        relatedEntity: { kind: 'Attendance', id: attendance._id },
+      });
+    } else if (checkInLocation?.isOutsideGeofence) {
       notify({
         recipients: await getEscalationRecipientIds(req.user),
         type: 'attendance_outside_geofence',
@@ -217,17 +232,34 @@ const checkOut = async (req, res) => {
 
     await attendance.save();
 
-    if (checkOutLocation?.isOutsideGeofence) {
-      const nearestOfficeNote = checkOutLocation.matchedLocationName
-        ? ` from ${checkOutLocation.matchedLocationName}`
-        : ' from office';
+    const checkOutNearestOfficeNote = checkOutLocation?.matchedLocationName
+      ? ` from ${checkOutLocation.matchedLocationName}`
+      : ' from office';
+
+    // Same split as check-in: WFH gets an informational heads-up with the
+    // location distance attached, not the "outside geofence" alarm.
+    if (attendance.workMode === 'Remote') {
+      const checkOutAwayNote = checkOutLocation?.isOutsideGeofence
+        ? ` · ${formatDistanceMeters(checkOutLocation.distanceMeters)} away${checkOutNearestOfficeNote}`
+        : '';
+      notify({
+        recipients: await getEscalationRecipientIds(req.user),
+        type: 'attendance_wfh_checkout',
+        title: 'Work From Home check-out',
+        message: `${req.user.name} checked out today from Work From Home at ${format(
+          checkOutTime,
+          'hh:mm a'
+        )}${checkOutAwayNote}.`,
+        relatedEntity: { kind: 'Attendance', id: attendance._id },
+      });
+    } else if (checkOutLocation?.isOutsideGeofence) {
       notify({
         recipients: await getEscalationRecipientIds(req.user),
         type: 'attendance_outside_geofence',
         title: 'Punch-out outside office location',
         message: `${req.user.name} checked out ${formatDistanceMeters(
           checkOutLocation.distanceMeters
-        )} away${nearestOfficeNote} at ${format(checkOutTime, 'hh:mm a')}.`,
+        )} away${checkOutNearestOfficeNote} at ${format(checkOutTime, 'hh:mm a')}.`,
         relatedEntity: { kind: 'Attendance', id: attendance._id },
       });
     }
@@ -349,8 +381,9 @@ const getMyMonthlyView = async (req, res) => {
     const [records, settings, employee] = await Promise.all([
       Attendance.find({ userId, date: { $regex: `^${monthPrefix}` } }),
       OrgSettings.getSettings(),
-      User.findById(userId).select('joiningDate name department'),
+      User.findById(userId).select('joiningDate name department weeklyOffDays'),
     ]);
+    const weeklyOffDays = employee?.weeklyOffDays;
 
     const leaveDates = await getApprovedLeaveDates(
       userId,
@@ -399,6 +432,7 @@ const getMyMonthlyView = async (req, res) => {
         joiningDate,
         settings,
         now,
+        weeklyOffDays,
       });
 
       if (status === 'Holiday') holidayCount++;
@@ -418,7 +452,7 @@ const getMyMonthlyView = async (req, res) => {
         shortDay: format(d, 'EEE'),
         dayNumber: parseInt(format(d, 'd'), 10),
         isToday: dateStr === todayStr,
-        isWeekend: !isWorkingDay(d, settings, holidayMap),
+        isWeekend: !isWorkingDay(d, settings, holidayMap, weeklyOffDays),
         status,
         leaveType: leaveType || null,
         holidayName: holidayName || null,
@@ -430,7 +464,7 @@ const getMyMonthlyView = async (req, res) => {
         earlyExitMinutes: record?.earlyExitMinutes || 0,
         overtimeHours: record?.overtimeHours || 0,
         isRegularized: record?.isRegularized || false,
-        workMode: record?.workMode || (!isWorkingDay(d, settings) ? 'Weekend' : 'Office'),
+        workMode: record?.workMode || (!isWorkingDay(d, settings, null, weeklyOffDays) ? 'Weekend' : 'Office'),
         remarks: record?.remarks || '',
       };
     });
@@ -491,8 +525,9 @@ const getMyWeeklyView = async (req, res) => {
     const [records, settings, employee] = await Promise.all([
       Attendance.find({ userId, date: { $in: dateStrings } }),
       OrgSettings.getSettings(),
-      User.findById(userId).select('joiningDate department'),
+      User.findById(userId).select('joiningDate department weeklyOffDays'),
     ]);
+    const weeklyOffDays = employee?.weeklyOffDays;
 
     const leaveDates = await getApprovedLeaveDates(
       userId,
@@ -529,6 +564,7 @@ const getMyWeeklyView = async (req, res) => {
         joiningDate,
         settings,
         now: today,
+        weeklyOffDays,
       });
 
       return {
@@ -546,7 +582,7 @@ const getMyWeeklyView = async (req, res) => {
         isLate: record?.isLate || false,
         lateMinutes: record?.lateMinutes || 0,
         overtimeHours: record?.overtimeHours || 0,
-        workMode: record?.workMode || (!isWorkingDay(d, settings) ? 'Weekend' : 'Office'),
+        workMode: record?.workMode || (!isWorkingDay(d, settings, null, weeklyOffDays) ? 'Weekend' : 'Office'),
         remarks: record?.remarks || '',
       };
     });

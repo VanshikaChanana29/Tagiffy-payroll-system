@@ -49,7 +49,8 @@ const applyLeave = async (req, res) => {
       startDate,
       endDate,
       settings,
-      holidayMap
+      holidayMap,
+      req.user.weeklyOffDays
     );
 
     if (daysCount < 1) {

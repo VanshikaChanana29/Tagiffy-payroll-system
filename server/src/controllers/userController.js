@@ -22,6 +22,17 @@ const { notify, getHrAndOwnerIds } = require('../utils/notificationService');
 const canAccessDocuments = (req, employeeId) =>
   req.user._id.toString() === employeeId || isAdminRole(req.user.role);
 
+// Normalizes a HR-supplied weekly-off list (e.g. [0, 6] for Sun+Sat) to a
+// deduped, sorted array of 0-6 day numbers. Returns null when the input isn't
+// a usable array so the caller can tell "leave unchanged" apart from "clear it".
+const normalizeWeeklyOffDays = (weeklyOffDays) => {
+  if (!Array.isArray(weeklyOffDays)) return null;
+  const days = weeklyOffDays
+    .map(Number)
+    .filter((d) => Number.isInteger(d) && d >= 0 && d <= 6);
+  return [...new Set(days)].sort();
+};
+
 // Assets follow the same rule: the employee they're assigned to, or HR.
 const canAccessAssets = canAccessDocuments;
 
@@ -268,6 +279,7 @@ const createEmployee = async (req, res) => {
       address,
       emergencyContact,
       leaveBalance,
+      weeklyOffDays,
     } = req.body;
 
     if (!name || !email || !department || !designation) {
@@ -340,6 +352,9 @@ const createEmployee = async (req, res) => {
       address: address || {},
       emergencyContact: emergencyContact || {},
       leaveBalance: leaveBalance || { paid: 14, sick: 7, unpaid: 0 },
+      // Left empty (org default) unless HR sets a per-person weekly off, e.g.
+      // for a role/office that only takes Sunday off instead of the weekend.
+      weeklyOffDays: normalizeWeeklyOffDays(weeklyOffDays) || [],
     });
 
     // A new hire is payroll-ready the moment they are created, instead of
@@ -675,6 +690,7 @@ const updateEmployee = async (req, res) => {
         leaveBalance,
         joiningDate,
         dateOfBirth,
+        weeklyOffDays,
       } = req.body;
 
       if (department || designation) {
@@ -716,6 +732,18 @@ const updateEmployee = async (req, res) => {
         employee.emergencyContact = { ...employee.emergencyContact, ...emergencyContact };
       if (leaveBalance)
         employee.leaveBalance = { ...employee.leaveBalance, ...leaveBalance };
+      // HR assigns this per person, any time after onboarding — e.g. a branch
+      // that only closes Sunday instead of the usual Saturday+Sunday.
+      if (weeklyOffDays !== undefined) {
+        const normalized = normalizeWeeklyOffDays(weeklyOffDays);
+        if (normalized === null) {
+          return res.status(400).json({
+            success: false,
+            message: 'weeklyOffDays must be an array of day numbers (0=Sunday ... 6=Saturday).',
+          });
+        }
+        employee.weeklyOffDays = normalized;
+      }
     }
 
     await employee.save();

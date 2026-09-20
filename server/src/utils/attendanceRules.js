@@ -45,9 +45,19 @@ const resolveStatus = (totalHours, settings) => {
   return 'Absent';
 };
 
-const isWorkingDay = (date, settings, holidayMap = null) => {
-  const days = settings.workingDays?.length ? settings.workingDays : [1, 2, 3, 4, 5];
-  if (!days.includes(date.getDay())) return false;
+// weeklyOffDays lets one employee's weekend differ from the org default, e.g.
+// a 6-day-week role that is only off on Sunday while everyone else is off
+// Saturday+Sunday too. Pass the employee's own User.weeklyOffDays; leave it
+// unset (or empty) to fall back to the organisation-wide settings.workingDays.
+const isWorkingDay = (date, settings, holidayMap = null, weeklyOffDays = null) => {
+  const dayOfWeek = date.getDay();
+
+  if (Array.isArray(weeklyOffDays) && weeklyOffDays.length > 0) {
+    if (weeklyOffDays.includes(dayOfWeek)) return false;
+  } else {
+    const days = settings.workingDays?.length ? settings.workingDays : [1, 2, 3, 4, 5];
+    if (!days.includes(dayOfWeek)) return false;
+  }
 
   // A company holiday is not a working day either.
   if (holidayMap) {
@@ -85,7 +95,7 @@ const applyAttendanceRules = (attendance, settings) => {
  * organisation does not work. Leave is charged in working days: booking
  * Friday to Monday should cost 2 days, not 4.
  */
-const countWorkingDays = (startDateStr, endDateStr, settings, holidayMap = null) => {
+const countWorkingDays = (startDateStr, endDateStr, settings, holidayMap = null, weeklyOffDays = null) => {
   const cursor = new Date(`${startDateStr}T00:00:00`);
   const end = new Date(`${endDateStr}T00:00:00`);
 
@@ -94,7 +104,7 @@ const countWorkingDays = (startDateStr, endDateStr, settings, holidayMap = null)
 
   while (cursor <= end) {
     calendarDays += 1;
-    if (isWorkingDay(cursor, settings, holidayMap)) workingDays += 1;
+    if (isWorkingDay(cursor, settings, holidayMap, weeklyOffDays)) workingDays += 1;
     cursor.setDate(cursor.getDate() + 1);
   }
 
