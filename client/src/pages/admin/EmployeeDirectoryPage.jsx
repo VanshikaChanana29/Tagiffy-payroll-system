@@ -679,7 +679,7 @@ const EmployeeDirectoryPage = () => {
                   <input
                     type="number"
                     min="0"
-                    step="10000"
+                    step="1"
                     value={newEmployee.annualCtc}
                     onChange={(e) => setNewEmployee({ ...newEmployee, annualCtc: e.target.value })}
                     placeholder="e.g. 1200000"
