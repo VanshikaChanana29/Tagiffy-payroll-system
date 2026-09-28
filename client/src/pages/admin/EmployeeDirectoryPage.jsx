@@ -56,6 +56,7 @@ const EmployeeDirectoryPage = () => {
   const [search, setSearch] = useState('');
   const [selectedDept, setSelectedDept] = useState('All');
   const [selectedStatus, setSelectedStatus] = useState('All');
+  const [selectedBankStatus, setSelectedBankStatus] = useState('All');
   const [sortBy, setSortBy] = useState('employeeId');
   const [sortDir, setSortDir] = useState('asc');
 
@@ -101,6 +102,7 @@ const EmployeeDirectoryPage = () => {
       if (search) params.search = search;
       if (selectedDept !== 'All') params.department = selectedDept;
       if (selectedStatus !== 'All') params.status = selectedStatus;
+      if (selectedBankStatus !== 'All') params.bankStatus = selectedBankStatus;
 
       const res = await api.get('/users', { params });
       if (res.data.success) {
@@ -135,7 +137,7 @@ const EmployeeDirectoryPage = () => {
 
   useEffect(() => {
     fetchEmployees();
-  }, [selectedDept, selectedStatus]);
+  }, [selectedDept, selectedStatus, selectedBankStatus]);
 
   // Debounced search
   useEffect(() => {
@@ -435,6 +437,20 @@ const EmployeeDirectoryPage = () => {
               <option value="All">All Statuses</option>
               <option value="Active">Active</option>
               <option value="Inactive">Inactive</option>
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-500 dark:text-slate-400">Bank details:</span>
+            <select
+              value={selectedBankStatus}
+              onChange={(e) => setSelectedBankStatus(e.target.value)}
+              className="theme-input text-xs"
+            >
+              <option value="All">All</option>
+              <option value="Missing">Not added</option>
+              <option value="Unconfirmed">Not confirmed by employee</option>
+              <option value="Correction Pending">Change waiting for approval</option>
+              <option value="Confirmed">Confirmed</option>
             </select>
           </div>
         </div>

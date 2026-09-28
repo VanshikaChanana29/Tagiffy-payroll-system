@@ -20,6 +20,7 @@ import { Link } from 'react-router-dom';
 import api from '../../api/client';
 import { format } from 'date-fns';
 import { leaveTitle } from '../../utils/leave';
+import { formatHours } from '../../utils/formatHours';
 
 const AdminDashboard = () => {
   const { user } = useAuth();
@@ -480,7 +481,7 @@ const AdminDashboard = () => {
                       {r.checkIn ? format(new Date(r.checkIn), 'hh:mm a') : '—'}
                     </div>
                     <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">
-                      {r.totalHours ? `${r.totalHours} hrs` : 'Working...'}
+                      {r.totalHours ? formatHours(r.totalHours) : 'Working...'}
                     </span>
                   </div>
                 </div>

@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
+import BankDetailsCard from '../components/profile/BankDetailsCard';
 import api from '../api/client';
 import {
   uploadDocument,
@@ -815,6 +816,8 @@ const ProfilePage = () => {
           </div>
         )}
       </form>
+
+      {(user?._id || user?.id) && <BankDetailsCard employeeId={user._id || user.id} mode="self" />}
 
       {/* EMPLOYEE DOSSIER & DOCUMENTS SECTION */}
       <div className="p-6 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card space-y-5 transition-colors">

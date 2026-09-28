@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Bell, CheckCheck, CalendarClock, MapPinOff, FileText, Wallet, ClipboardCheck, Clock, Home } from 'lucide-react';
+import { Bell, CheckCheck, CalendarClock, MapPinOff, FileText, Wallet, ClipboardCheck, Clock, Home, Landmark } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { useNotifications } from '../../context/NotificationContext';
 import Tooltip from '../common/Tooltip';
@@ -19,6 +19,10 @@ const ICONS_BY_TYPE = {
   document_uploaded: FileText,
   document_verified: FileText,
   document_rejected: FileText,
+  bank_details_correction_requested: Landmark,
+  bank_details_correction_approved: Landmark,
+  bank_details_correction_rejected: Landmark,
+  bank_details_updated_by_hr: Landmark,
   payslip_generated: Wallet,
 };
 

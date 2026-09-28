@@ -106,14 +106,34 @@ const validateDeptDesignation = async (department, designation) => {
   return null;
 };
 
+// Salary goes to these accounts, so only HR and the employee themselves see
+// them; managers get their team list without bank details.
+const hideBankDetails = (employees, viewer) =>
+  isAdminRole(viewer.role) ? employees : employees.map(({ bankDetails, ...rest }) => rest);
+
+// Directory filter HR uses to chase bank details before payroll.
+const BANK_STATUS_FILTERS = {
+  Missing: { 'bankDetails.accountNumber': { $in: ['', null] } },
+  Unconfirmed: {
+    'bankDetails.accountNumber': { $nin: ['', null] },
+    'bankDetails.status': { $in: ['Unconfirmed', null] },
+  },
+  Confirmed: { 'bankDetails.status': 'Confirmed' },
+  'Correction Pending': { 'bankDetails.status': 'Correction Pending' },
+};
+
 // @desc    Get all employees with search, filter, and pagination
 // @route   GET /api/users
 // @access  Private (Admin only)
 const getAllEmployees = async (req, res) => {
   try {
-    const { search, department, status, role } = req.query;
+    const { search, department, status, role, bankStatus } = req.query;
 
     const query = {};
+
+    if (bankStatus && BANK_STATUS_FILTERS[bankStatus] && isAdminRole(req.user.role)) {
+      query.$and = [BANK_STATUS_FILTERS[bankStatus]];
+    }
 
     // Filter by department
     if (department && department !== 'All') {
@@ -163,7 +183,7 @@ const getAllEmployees = async (req, res) => {
       count: employees.length,
       total,
       departments,
-      employees: await withLeaveBalances(employees),
+      employees: hideBankDetails(await withLeaveBalances(employees), req.user),
     });
   } catch (error) {
     console.error('Get All Employees Error:', error);
@@ -207,7 +227,7 @@ const getMyTeam = async (req, res) => {
     res.status(200).json({
       success: true,
       count: team.length,
-      team: await withLeaveBalances(team),
+      team: hideBankDetails(await withLeaveBalances(team), req.user),
     });
   } catch (error) {
     console.error('Get My Team Error:', error);

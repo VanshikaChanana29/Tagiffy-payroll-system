@@ -20,6 +20,7 @@ import useDepartments from '../../hooks/useDepartments';
 import { useToast } from '../../context/ToastContext';
 import demoAvatars from '../../utils/avatars';
 import { format } from 'date-fns';
+import { formatHours } from '../../utils/formatHours';
 import Tooltip from '../../components/common/Tooltip';
 
 const AllAttendancePage = () => {
@@ -338,7 +339,7 @@ const AllAttendancePage = () => {
                     </td>
 
                     <td className="px-6 py-4 text-emerald-600 dark:text-emerald-400 font-bold">
-                      {r.totalHours ? `${r.totalHours} hrs` : r.checkIn ? 'In Progress' : '—'}
+                      {r.totalHours ? formatHours(r.totalHours) : r.checkIn ? 'In Progress' : '—'}
                     </td>
 
                     <td className="px-6 py-4">

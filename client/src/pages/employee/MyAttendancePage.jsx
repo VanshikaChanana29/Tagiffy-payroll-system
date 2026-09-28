@@ -17,6 +17,7 @@ import api from '../../api/client';
 import RegularizationPanel from '../../components/attendance/RegularizationPanel';
 import { useToast } from '../../context/ToastContext';
 import { format } from 'date-fns';
+import { formatHours } from '../../utils/formatHours';
 
 const MyAttendancePage = () => {
   const [historyData, setHistoryData] = useState([]);
@@ -185,7 +186,7 @@ const MyAttendancePage = () => {
                         {item.checkOut ? format(new Date(item.checkOut), 'hh:mm a') : '—'}
                       </td>
                       <td className="px-6 py-3.5 text-emerald-600 dark:text-emerald-400 font-bold">
-                        {item.totalHours ? `${item.totalHours} hrs` : item.checkIn ? 'In Progress' : '—'}
+                        {item.totalHours ? formatHours(item.totalHours) : item.checkIn ? 'In Progress' : '—'}
                       </td>
                       <td className="px-6 py-3.5">
                         <span className="inline-flex items-center gap-1 text-slate-700 dark:text-slate-300">

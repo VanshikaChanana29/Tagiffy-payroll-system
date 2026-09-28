@@ -20,6 +20,10 @@ const NOTIFICATION_TYPES = [
   'reimbursement_approved',
   'reimbursement_rejected',
   'reimbursement_cancelled',
+  'bank_details_correction_requested',
+  'bank_details_correction_approved',
+  'bank_details_correction_rejected',
+  'bank_details_updated_by_hr',
 ];
 
 const notificationSchema = new mongoose.Schema(

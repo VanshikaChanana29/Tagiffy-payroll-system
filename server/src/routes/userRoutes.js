@@ -26,6 +26,14 @@ const {
   updateEmployeeSalary,
   clearAllData,
 } = require('../controllers/userController');
+const {
+  getBankDetails,
+  confirmBankDetails,
+  requestBankCorrection,
+  cancelBankCorrection,
+  reviewBankCorrection,
+  updateBankDetailsByHr,
+} = require('../controllers/bankDetailsController');
 const { protect, authorize } = require('../middleware/auth');
 const { uploadDocument, uploadAvatar, uploadEmployeeSheet } = require('../middleware/upload');
 
@@ -52,6 +60,16 @@ router.put('/profile', (req, res) => {
   req.params.id = req.user._id.toString();
   return updateEmployee(req, res);
 });
+
+// Bank details: the employee confirms or requests a change; HR approves or edits.
+router.route('/:id/bank-details')
+  .get(getBankDetails)
+  .put(authorize('admin'), updateBankDetailsByHr);
+router.put('/:id/bank-details/confirm', confirmBankDetails);
+router.route('/:id/bank-details/correction')
+  .post(requestBankCorrection)
+  .delete(cancelBankCorrection)
+  .put(authorize('admin'), reviewBankCorrection);
 
 // Employee document routes
 router.route('/:id/documents')

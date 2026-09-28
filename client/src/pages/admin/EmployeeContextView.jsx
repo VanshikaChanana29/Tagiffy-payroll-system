@@ -46,6 +46,8 @@ import {
 import { format } from 'date-fns';
 import { TaggifyIcon } from '../../components/common/TaggifyLogo';
 import Tooltip from '../../components/common/Tooltip';
+import BankDetailsCard from '../../components/profile/BankDetailsCard';
+import { formatHours } from '../../utils/formatHours';
 
 const EmployeeContextView = () => {
   const {
@@ -1194,6 +1196,8 @@ const EmployeeContextView = () => {
               </div>
             </div>
           </form>
+
+          {inspectedEmployee?._id && <BankDetailsCard employeeId={inspectedEmployee._id} mode="hr" />}
         </div>
       )}
 
@@ -1222,7 +1226,7 @@ const EmployeeContextView = () => {
             </div>
             <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center">
               <div className="text-2xl font-black text-brand-600 dark:text-brand-400">
-                {attendanceData.stats?.totalHoursWorked ?? '41.5'}h
+                {formatHours(attendanceData.stats?.totalHoursWorked)}
               </div>
               <div className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mt-0.5">
                 Total Logged
@@ -1230,7 +1234,7 @@ const EmployeeContextView = () => {
             </div>
             <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center">
               <div className="text-2xl font-black text-brand-600 dark:text-brand-400">
-                {attendanceData.stats?.avgDailyHours ?? '8.3'}h
+                {formatHours(attendanceData.stats?.avgDailyHours)}
               </div>
               <div className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mt-0.5">
                 Avg Daily
@@ -1270,7 +1274,7 @@ const EmployeeContextView = () => {
                           {r.checkOut ? format(new Date(r.checkOut), 'hh:mm a') : '—'}
                         </td>
                         <td className="py-3 font-bold text-brand-600 dark:text-brand-400">
-                          {r.totalHours ? `${r.totalHours} hrs` : '—'}
+                          {r.totalHours ? formatHours(r.totalHours) : '—'}
                         </td>
                         <td className="py-3 text-slate-500">{r.workMode || 'Office'}</td>
                         <td className="py-3">

@@ -14,6 +14,7 @@ import api from '../../api/client';
 import { useToast } from '../../context/ToastContext';
 import { format } from 'date-fns';
 import { getCurrentLocation } from '../../utils/geolocation';
+import { formatHours } from '../../utils/formatHours';
 
 // 81592 -> "81.6 km", 150 -> "150 m"
 const formatDistance = (meters) => {
@@ -223,7 +224,7 @@ const CheckInOutWidget = ({ onAttendanceChange }) => {
           <div className="flex items-center justify-between text-xs pt-2 border-t border-slate-200 dark:border-slate-800">
             <span className="text-slate-500 dark:text-slate-400">Total Work Hours:</span>
             <span className="font-bold text-emerald-600 dark:text-emerald-400">
-              {attendance?.totalHours ? `${attendance.totalHours} hrs` : isCheckedIn ? 'In Progress' : '0.00 hrs'}
+              {attendance?.totalHours ? formatHours(attendance.totalHours) : isCheckedIn ? 'In Progress' : formatHours(0)}
             </span>
           </div>
 
@@ -239,7 +240,7 @@ const CheckInOutWidget = ({ onAttendanceChange }) => {
             {isCheckedIn && !isCheckedOut
               ? elapsedTime
               : attendance?.totalHours
-              ? `${attendance.totalHours} hrs`
+              ? formatHours(attendance.totalHours)
               : '00:00:00'}
           </div>
 

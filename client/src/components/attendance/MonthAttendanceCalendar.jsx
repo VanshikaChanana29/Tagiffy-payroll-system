@@ -17,6 +17,7 @@ import api from '../../api/client';
 import { useToast } from '../../context/ToastContext';
 import Tooltip from '../common/Tooltip';
 import { format as formatDate } from 'date-fns';
+import { formatHours } from '../../utils/formatHours';
 
 // "239" -> "3h 59m", "12" -> "12m"
 const formatMinutes = (mins) => {
@@ -399,10 +400,10 @@ const MonthAttendanceCalendar = ({ onAttendanceChange }) => {
                           )}
                           {day.overtimeHours > 0 && (
                             <span
-                              title={`${day.overtimeHours} hours of overtime`}
+                              title={`${formatHours(day.overtimeHours)} of overtime`}
                               className="text-[9px] font-bold px-1 py-0.5 rounded bg-sky-500/15 text-sky-700 dark:text-sky-300 border border-sky-500/25"
                             >
-                              OT {day.overtimeHours}h
+                              OT {formatHours(day.overtimeHours)}
                             </span>
                           )}
                           {day.isRegularized && (
@@ -418,7 +419,7 @@ const MonthAttendanceCalendar = ({ onAttendanceChange }) => {
 
                       {/* Bottom Hours / Time Info */}
                       <div className="text-[10px] sm:text-[11px] font-mono text-slate-500 dark:text-slate-400 flex items-center justify-between mt-auto">
-                        <span>{day.totalHours > 0 ? `${day.totalHours}h` : '—'}</span>
+                        <span>{day.totalHours > 0 ? formatHours(day.totalHours) : '—'}</span>
                         {day.workMode && day.workMode !== 'Weekend' && (
                           <span className="text-[9px] text-slate-400 font-sans hidden sm:inline-block">
                             {day.workMode}
@@ -463,7 +464,7 @@ const MonthAttendanceCalendar = ({ onAttendanceChange }) => {
                 <div className="space-y-2 mt-3">
                   <div className="text-xs font-bold text-brand-600 dark:text-brand-300">{day.status}</div>
                   <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
-                    {day.totalHours > 0 ? `${day.totalHours} hrs` : '—'}
+                    {day.totalHours > 0 ? formatHours(day.totalHours) : '—'}
                   </div>
                 </div>
               </div>
@@ -499,7 +500,7 @@ const MonthAttendanceCalendar = ({ onAttendanceChange }) => {
             <div>
               <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold uppercase">Total Hours</span>
               <div className="text-2xl font-black text-brand-600 dark:text-brand-400 mt-0.5">
-                {stats.totalHoursWorked} <span className="text-xs font-medium text-slate-400">hrs</span>
+                {formatHours(stats.totalHoursWorked)}
               </div>
             </div>
             <Sparkles className="w-6 h-6 text-brand-500" />
@@ -509,7 +510,7 @@ const MonthAttendanceCalendar = ({ onAttendanceChange }) => {
             <div>
               <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold uppercase">Daily Average</span>
               <div className="text-2xl font-black text-brand-600 dark:text-brand-400 mt-0.5">
-                {stats.avgDailyHours} <span className="text-xs font-medium text-slate-400">h/day</span>
+                {formatHours(stats.avgDailyHours)} <span className="text-xs font-medium text-slate-400">/day</span>
               </div>
             </div>
             <Clock className="w-6 h-6 text-brand-500" />
@@ -572,7 +573,7 @@ const MonthAttendanceCalendar = ({ onAttendanceChange }) => {
                 <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
                   <span className="text-slate-400 block mb-1">Total Hours:</span>
                   <span className="font-bold text-brand-600 dark:text-brand-300 font-mono text-sm">
-                    {selectedDay.totalHours > 0 ? `${selectedDay.totalHours} hrs` : '0.0 hrs'}
+                    {formatHours(selectedDay.totalHours)}
                   </span>
                 </div>
 

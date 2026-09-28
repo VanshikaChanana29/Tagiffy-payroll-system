@@ -85,10 +85,32 @@ const userSchema = new mongoose.Schema(
       relation: { type: String, default: '' },
       phone: { type: String, default: '' },
     },
+    // Usually entered by HR (bulk upload / edit), so the employee confirms them.
+    // Any change the employee wants is a request that HR approves; salary is
+    // paid to this account, so nobody changes it unreviewed.
     bankDetails: {
       accountNumber: { type: String, default: '' },
       ifscCode: { type: String, default: '' },
       bankName: { type: String, default: '' },
+      status: {
+        type: String,
+        enum: ['Unconfirmed', 'Confirmed', 'Correction Pending'],
+        default: 'Unconfirmed',
+      },
+      confirmedAt: { type: Date, default: null },
+      pendingChange: {
+        accountNumber: { type: String, default: '' },
+        ifscCode: { type: String, default: '' },
+        bankName: { type: String, default: '' },
+        reason: { type: String, default: '' },
+        requestedAt: { type: Date, default: null },
+        // Where a rejected request returns to.
+        previousStatus: { type: String, default: 'Unconfirmed' },
+      },
+      // HR's note on the last reviewed request (shown to the employee on rejection).
+      reviewNote: { type: String, default: '' },
+      reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+      reviewedAt: { type: Date, default: null },
     },
     // Current salary structure. Captured at onboarding from an annual CTC and
     // split by the org's configured percentages; HR may override any component.

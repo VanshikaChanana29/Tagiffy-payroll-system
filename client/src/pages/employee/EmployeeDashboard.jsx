@@ -27,6 +27,7 @@ import ApplyLeaveModal from '../../components/leave/ApplyLeaveModal';
 import api from '../../api/client';
 import { format } from 'date-fns';
 import { leaveTitle } from '../../utils/leave';
+import { formatHours } from '../../utils/formatHours';
 
 const EmployeeDashboard = () => {
   const { user } = useAuth();
@@ -104,7 +105,7 @@ const EmployeeDashboard = () => {
             id: `att-out-${att._id || att.date}`,
             type: 'attendance',
             title: 'Shift Completed & Punch Out',
-            description: `Checked out at ${isNaN(checkOutDate.getTime()) ? '05:45 PM' : format(checkOutDate, 'hh:mm a')} • ${att.totalHours || 8} hrs logged`,
+            description: `Checked out at ${isNaN(checkOutDate.getTime()) ? '05:45 PM' : format(checkOutDate, 'hh:mm a')} • ${formatHours(att.totalHours)} logged`,
             timestamp: isNaN(checkOutDate.getTime()) ? new Date() : checkOutDate,
             status: 'Completed',
             statusColor: 'brand',
@@ -275,7 +276,7 @@ const EmployeeDashboard = () => {
               <span className="text-xs font-normal text-slate-500 dark:text-slate-400">days</span>
             </div>
             <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 block">
-              {attendanceStats?.totalHoursWorked || attendanceStats?.totalHours || 40} total work hours
+              {formatHours(attendanceStats?.totalHoursWorked || attendanceStats?.totalHours)} total worked
             </span>
           </div>
           <div className="w-10 h-10 rounded-xl bg-brand-500/10 text-brand-600 dark:text-brand-400 flex items-center justify-center">
