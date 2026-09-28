@@ -3,24 +3,71 @@ const AttendanceRequest = require('../models/AttendanceRequest');
 const Leave = require('../models/Leave');
 const User = require('../models/User');
 const OrgSettings = require('../models/OrgSettings');
-const { applyAttendanceRules, isWorkingDay } = require('../utils/attendanceRules');
+const { applyAttendanceRules, isWorkingDay, resolveEmployeeShift } = require('../utils/attendanceRules');
 const { getVisibleUserIds, canManageEmployee } = require('../utils/teamScope');
 const { isAdminRole } = require('../utils/roles');
 const { getHolidayMap } = require('./holidayController');
-const { buildPunchLocation, formatDistanceMeters } = require('../utils/geo');
+const {
+  buildPunchLocation,
+  formatDistanceMeters,
+  reverseGeocode,
+  formatPlace,
+  describePunchLocation,
+} = require('../utils/geo');
 const { notify, getEscalationRecipientIds } = require('../utils/notificationService');
 const { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, eachDayOfInterval, subDays } = require('date-fns');
 
 // Helper to get formatted date string YYYY-MM-DD
 const getTodayDateStr = () => format(new Date(), 'yyyy-MM-dd');
 
+/**
+ * Sends a location-related punch alert (outside geofence / WFH) to HR and the
+ * manager. Runs in the background after the punch is saved: it first looks up
+ * the area/city for the punch coordinates, stores them on the record, then
+ * notifies. `buildMessage(placeNote)` receives " near <area, city>" or "".
+ * Never throws.
+ */
+const sendPunchLocationAlert = async ({ attendance, field, location, employee, type, title, buildMessage }) => {
+  try {
+    const place = location ? await reverseGeocode(location.lat, location.lng) : null;
+    const fullLocation = location ? { ...location, ...(place || {}) } : null;
+
+    if (place) {
+      await Attendance.updateOne(
+        { _id: attendance._id },
+        {
+          $set: {
+            [`${field}.area`]: place.area,
+            [`${field}.city`]: place.city,
+            [`${field}.address`]: place.address,
+          },
+        }
+      );
+    }
+
+    const placeText = formatPlace(place);
+    await notify({
+      recipients: await getEscalationRecipientIds(employee),
+      type,
+      title,
+      message: buildMessage(placeText ? ` near ${placeText}` : ''),
+      emailDetails: describePunchLocation(fullLocation),
+      relatedEntity: { kind: 'Attendance', id: attendance._id },
+    });
+  } catch (err) {
+    console.error('📍 Failed to send punch location alert:', err.message);
+  }
+};
+
 // Dates an employee is on approved leave, as a { 'YYYY-MM-DD': leaveType } map.
 // Approved leave must win over "Absent", otherwise the roll-call misreports
-// people who are legitimately off.
+// people who are legitimately off. Approved Work From Home is excluded: those
+// are working days, so the employee still has to punch in or shows Absent.
 const getApprovedLeaveDates = async (userId, fromDateStr, toDateStr) => {
   const leaves = await Leave.find({
     userId,
     status: 'Approved',
+    leaveType: { $ne: 'WFH' },
     startDate: { $lte: toDateStr },
     endDate: { $gte: fromDateStr },
   });
@@ -51,6 +98,7 @@ const resolveDayStatus = ({
   settings,
   now,
   weeklyOffDays,
+  attendanceExempt,
 }) => {
   if (joiningDate && date < joiningDate && dateStr !== format(joiningDate, 'yyyy-MM-dd')) {
     return 'Pre-joining';
@@ -69,14 +117,24 @@ const resolveDayStatus = ({
   const todayStr = getTodayDateStr();
   if (date > now && dateStr !== todayStr) return 'Upcoming';
 
+  // Nobody expects a punch from an exempt employee, so a missing one isn't an absence.
+  if (attendanceExempt) return 'Not Tracked';
+
   return 'Absent';
 };
+
+// Employees HR has taken off attendance tracking cannot punch at all; hiding
+// the button alone would still leave the API open.
+const EXEMPT_PUNCH_MESSAGE = 'Attendance is not tracked for your role, so punch in/out is not required.';
 
 // @desc    Check-in for today
 // @route   POST /api/attendance/check-in
 // @access  Private (Employee / Admin for self)
 const checkIn = async (req, res) => {
   try {
+    if (req.user.attendanceExempt) {
+      return res.status(403).json({ success: false, message: EXEMPT_PUNCH_MESSAGE });
+    }
     const userId = req.user._id;
     const todayStr = getTodayDateStr();
     const { workMode = 'Office', remarks = '', location } = req.body;
@@ -115,7 +173,7 @@ const checkIn = async (req, res) => {
       if (remarks) attendance.remarks = remarks;
     }
 
-    applyAttendanceRules(attendance, settings);
+    applyAttendanceRules(attendance, resolveEmployeeShift(settings, req.user));
 
     await attendance.save();
 
@@ -129,26 +187,31 @@ const checkIn = async (req, res) => {
     // Work From Home is just a selectable mode, not a violation — HR still
     // gets told about it (with the geolocation distance for their records),
     // but as a plain heads-up rather than the "outside geofence" alarm.
+    // Not awaited: the address lookup shouldn't hold up the employee's punch.
+    const checkInTimeStr = format(attendance.checkIn, 'hh:mm a');
     if (workMode === 'Remote') {
-      notify({
-        recipients: await getEscalationRecipientIds(req.user),
+      sendPunchLocationAlert({
+        attendance,
+        field: 'checkInLocation',
+        location: checkInLocation,
+        employee: req.user,
         type: 'attendance_wfh_checkin',
         title: 'Work From Home check-in',
-        message: `${req.user.name} checked in today from Work From Home at ${format(
-          attendance.checkIn,
-          'hh:mm a'
-        )}${awayNote}.`,
-        relatedEntity: { kind: 'Attendance', id: attendance._id },
+        buildMessage: (placeNote) =>
+          `${req.user.name} checked in today from Work From Home at ${checkInTimeStr}${placeNote}${awayNote}.`,
       });
     } else if (checkInLocation?.isOutsideGeofence) {
-      notify({
-        recipients: await getEscalationRecipientIds(req.user),
+      sendPunchLocationAlert({
+        attendance,
+        field: 'checkInLocation',
+        location: checkInLocation,
+        employee: req.user,
         type: 'attendance_outside_geofence',
         title: 'Punch-in outside office location',
-        message: `${req.user.name} checked in ${formatDistanceMeters(
-          checkInLocation.distanceMeters
-        )} away${nearestOfficeNote} at ${format(attendance.checkIn, 'hh:mm a')}.`,
-        relatedEntity: { kind: 'Attendance', id: attendance._id },
+        buildMessage: (placeNote) =>
+          `${req.user.name} checked in ${formatDistanceMeters(
+            checkInLocation.distanceMeters
+          )} away${nearestOfficeNote}${placeNote} at ${checkInTimeStr}.`,
       });
     }
 
@@ -187,6 +250,9 @@ const checkIn = async (req, res) => {
 // @access  Private (Employee / Admin for self)
 const checkOut = async (req, res) => {
   try {
+    if (req.user.attendanceExempt) {
+      return res.status(403).json({ success: false, message: EXEMPT_PUNCH_MESSAGE });
+    }
     const userId = req.user._id;
     const todayStr = getTodayDateStr();
     const { remarks, location } = req.body;
@@ -222,7 +288,7 @@ const checkOut = async (req, res) => {
     const settings = await OrgSettings.getSettings();
     const checkOutLocation = buildPunchLocation(location, settings);
     if (checkOutLocation) attendance.checkOutLocation = checkOutLocation;
-    applyAttendanceRules(attendance, settings);
+    applyAttendanceRules(attendance, resolveEmployeeShift(settings, req.user));
 
     if (remarks) {
       attendance.remarks = attendance.remarks
@@ -238,29 +304,33 @@ const checkOut = async (req, res) => {
 
     // Same split as check-in: WFH gets an informational heads-up with the
     // location distance attached, not the "outside geofence" alarm.
+    const checkOutTimeStr = format(checkOutTime, 'hh:mm a');
     if (attendance.workMode === 'Remote') {
       const checkOutAwayNote = checkOutLocation?.isOutsideGeofence
         ? ` · ${formatDistanceMeters(checkOutLocation.distanceMeters)} away${checkOutNearestOfficeNote}`
         : '';
-      notify({
-        recipients: await getEscalationRecipientIds(req.user),
+      sendPunchLocationAlert({
+        attendance,
+        field: 'checkOutLocation',
+        location: checkOutLocation,
+        employee: req.user,
         type: 'attendance_wfh_checkout',
         title: 'Work From Home check-out',
-        message: `${req.user.name} checked out today from Work From Home at ${format(
-          checkOutTime,
-          'hh:mm a'
-        )}${checkOutAwayNote}.`,
-        relatedEntity: { kind: 'Attendance', id: attendance._id },
+        buildMessage: (placeNote) =>
+          `${req.user.name} checked out today from Work From Home at ${checkOutTimeStr}${placeNote}${checkOutAwayNote}.`,
       });
     } else if (checkOutLocation?.isOutsideGeofence) {
-      notify({
-        recipients: await getEscalationRecipientIds(req.user),
+      sendPunchLocationAlert({
+        attendance,
+        field: 'checkOutLocation',
+        location: checkOutLocation,
+        employee: req.user,
         type: 'attendance_outside_geofence',
         title: 'Punch-out outside office location',
-        message: `${req.user.name} checked out ${formatDistanceMeters(
-          checkOutLocation.distanceMeters
-        )} away${checkOutNearestOfficeNote} at ${format(checkOutTime, 'hh:mm a')}.`,
-        relatedEntity: { kind: 'Attendance', id: attendance._id },
+        buildMessage: (placeNote) =>
+          `${req.user.name} checked out ${formatDistanceMeters(
+            checkOutLocation.distanceMeters
+          )} away${checkOutNearestOfficeNote}${placeNote} at ${checkOutTimeStr}.`,
       });
     }
 
@@ -291,11 +361,15 @@ const getTodayStatus = async (req, res) => {
     const userId = (isAdminRole(req.user.role) && req.query.userId) ? req.query.userId : req.user._id;
     const todayStr = getTodayDateStr();
 
-    const attendance = await Attendance.findOne({ userId, date: todayStr });
+    const [attendance, employee] = await Promise.all([
+      Attendance.findOne({ userId, date: todayStr }),
+      User.findById(userId).select('attendanceExempt'),
+    ]);
 
     res.status(200).json({
       success: true,
       date: todayStr,
+      attendanceExempt: !!employee?.attendanceExempt,
       attendance: attendance || null,
       isCheckedIn: !!(attendance && attendance.checkIn),
       isCheckedOut: !!(attendance && attendance.checkOut),
@@ -381,7 +455,7 @@ const getMyMonthlyView = async (req, res) => {
     const [records, settings, employee] = await Promise.all([
       Attendance.find({ userId, date: { $regex: `^${monthPrefix}` } }),
       OrgSettings.getSettings(),
-      User.findById(userId).select('joiningDate name department weeklyOffDays'),
+      User.findById(userId).select('joiningDate name department weeklyOffDays customShift attendanceExempt'),
     ]);
     const weeklyOffDays = employee?.weeklyOffDays;
 
@@ -433,6 +507,7 @@ const getMyMonthlyView = async (req, res) => {
         settings,
         now,
         weeklyOffDays,
+        attendanceExempt: !!employee?.attendanceExempt,
       });
 
       if (status === 'Holiday') holidayCount++;
@@ -472,6 +547,9 @@ const getMyMonthlyView = async (req, res) => {
     const workedDaysCount = presentCount + halfDayCount;
     const avgDailyHours = workedDaysCount > 0 ? (totalHoursWorked / workedDaysCount).toFixed(1) : '0.0';
 
+    // This employee's own office timing when HR set one, else the org shift.
+    const shift = resolveEmployeeShift(settings, employee);
+
     res.status(200).json({
       success: true,
       year: targetYear,
@@ -479,11 +557,13 @@ const getMyMonthlyView = async (req, res) => {
       monthName: format(monthStart, 'MMMM'),
       monthStart: format(monthStart, 'yyyy-MM-dd'),
       monthEnd: format(monthEnd, 'yyyy-MM-dd'),
+      attendanceExempt: !!employee?.attendanceExempt,
       shift: {
-        shiftStart: settings.shiftStart,
-        shiftEnd: settings.shiftEnd,
-        graceMinutes: settings.graceMinutes,
-        overtimeAfterHours: settings.overtimeAfterHours,
+        shiftStart: shift.shiftStart,
+        shiftEnd: shift.shiftEnd,
+        graceMinutes: shift.graceMinutes,
+        overtimeAfterHours: shift.overtimeAfterHours,
+        isCustomShift: shift.isCustomShift,
       },
       stats: {
         totalDays: days.length,
@@ -525,7 +605,7 @@ const getMyWeeklyView = async (req, res) => {
     const [records, settings, employee] = await Promise.all([
       Attendance.find({ userId, date: { $in: dateStrings } }),
       OrgSettings.getSettings(),
-      User.findById(userId).select('joiningDate department weeklyOffDays'),
+      User.findById(userId).select('joiningDate department weeklyOffDays attendanceExempt'),
     ]);
     const weeklyOffDays = employee?.weeklyOffDays;
 
@@ -565,6 +645,7 @@ const getMyWeeklyView = async (req, res) => {
         settings,
         now: today,
         weeklyOffDays,
+        attendanceExempt: !!employee?.attendanceExempt,
       });
 
       return {
@@ -591,6 +672,7 @@ const getMyWeeklyView = async (req, res) => {
       success: true,
       weekStart: format(weekStart, 'yyyy-MM-dd'),
       weekEnd: format(weekEnd, 'yyyy-MM-dd'),
+      attendanceExempt: !!employee?.attendanceExempt,
       weeklyDays,
     });
   } catch (error) {
@@ -687,7 +769,7 @@ const updateAttendanceRecord = async (req, res) => {
 
     const record = await Attendance.findById(id).populate(
       'userId',
-      'name employeeId email'
+      'name employeeId email customShift'
     );
     if (!record) {
       return res.status(404).json({ success: false, message: 'Attendance record not found' });
@@ -716,7 +798,7 @@ const updateAttendanceRecord = async (req, res) => {
 
     const settings = await OrgSettings.getSettings();
     const manualStatus = status;
-    applyAttendanceRules(record, settings);
+    applyAttendanceRules(record, resolveEmployeeShift(settings, record.userId));
     // An admin's explicit status choice wins over the derived one.
     if (manualStatus) record.status = manualStatus;
 
@@ -921,7 +1003,7 @@ const reviewRegularizationRequest = async (req, res) => {
       });
     }
 
-    const request = await AttendanceRequest.findById(id).populate('userId', 'name reportingManager role');
+    const request = await AttendanceRequest.findById(id).populate('userId', 'name reportingManager role customShift');
     if (!request) {
       return res.status(404).json({ success: false, message: 'Correction request not found' });
     }
@@ -981,7 +1063,7 @@ const reviewRegularizationRequest = async (req, res) => {
         ? `${record.remarks} | Regularized: ${request.reason}`
         : `Regularized: ${request.reason}`;
 
-      applyAttendanceRules(record, settings);
+      applyAttendanceRules(record, resolveEmployeeShift(settings, request.userId));
       await record.save();
     }
 
@@ -1045,6 +1127,15 @@ const recalculateAttendance = async (req, res) => {
       OrgSettings.getSettings(),
     ]);
 
+    // Each person is judged against their own office timing, if HR set one.
+    const employees = await User.find({
+      _id: { $in: [...new Set(records.map((r) => r.userId.toString()))] },
+    }).select('customShift');
+    const shiftByUser = new Map(
+      employees.map((e) => [e._id.toString(), resolveEmployeeShift(settings, e)])
+    );
+    const orgShift = resolveEmployeeShift(settings, null);
+
     let updated = 0;
     let lateCount = 0;
     let overtimeCount = 0;
@@ -1065,7 +1156,7 @@ const recalculateAttendance = async (req, res) => {
         record.totalHours = parseFloat(Math.max(0, durationMs / (1000 * 60 * 60)).toFixed(2));
       }
 
-      applyAttendanceRules(record, settings);
+      applyAttendanceRules(record, shiftByUser.get(record.userId.toString()) || orgShift);
 
       const changed =
         before.isLate !== record.isLate ||

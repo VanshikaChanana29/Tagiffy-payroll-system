@@ -30,11 +30,18 @@ const salarySchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    // One-time bonus HR adds on top of the regular structure for this month only.
+    incentive: {
+      type: Number,
+      default: 0,
+    },
     deductions: {
       tax: { type: Number, default: 0 },
       pf: { type: Number, default: 0 },
       unpaidLeaveDeduction: { type: Number, default: 0 },
       other: { type: Number, default: 0 },
+      // Salary paid ahead of time, taken back from this payslip.
+      advance: { type: Number, default: 0 },
     },
     grossSalary: {
       type: Number,
@@ -65,12 +72,14 @@ const salarySchema = new mongoose.Schema(
 
 // Pre-save calculate gross and net salary
 salarySchema.pre('save', function (next) {
-  const totalAllowances = (this.basicSalary || 0) + (this.hra || 0) + (this.allowances || 0);
+  const totalAllowances =
+    (this.basicSalary || 0) + (this.hra || 0) + (this.allowances || 0) + (this.incentive || 0);
   const totalDeductions =
     (this.deductions?.tax || 0) +
     (this.deductions?.pf || 0) +
     (this.deductions?.unpaidLeaveDeduction || 0) +
-    (this.deductions?.other || 0);
+    (this.deductions?.other || 0) +
+    (this.deductions?.advance || 0);
 
   this.grossSalary = totalAllowances;
   this.netSalary = Math.max(0, totalAllowances - totalDeductions);

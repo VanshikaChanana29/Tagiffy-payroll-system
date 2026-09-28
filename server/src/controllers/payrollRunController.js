@@ -7,15 +7,28 @@ const OrgSettings = require('../models/OrgSettings');
 const { isWorkingDay } = require('../utils/attendanceRules');
 const { getHolidayMap } = require('./holidayController');
 const { perDaySalary, round } = require('../utils/salaryStructure');
-const { notify } = require('../utils/notificationService');
+const {
+  planAdvanceRecovery,
+  getPendingAdvancesByUser,
+  recordAdvanceRecovery,
+} = require('./salaryAdvanceController');
 
 /**
  * Loss-of-pay days for one employee in one month.
  *
  * Unpaid leave is counted only on working days, and only once — a day that is
  * both marked absent and covered by unpaid leave must not be charged twice.
+ * `skipAbsences` is for attendance-exempt employees, who never punch, so a
+ * missing record says nothing about whether they worked.
  */
-const calculateLopDays = async (employee, monthStart, monthEnd, settings, holidayMap = {}) => {
+const calculateLopDays = async (
+  employee,
+  monthStart,
+  monthEnd,
+  settings,
+  holidayMap = {},
+  { skipAbsences = false } = {}
+) => {
   const fromStr = format(monthStart, 'yyyy-MM-dd');
   const toStr = format(monthEnd, 'yyyy-MM-dd');
 
@@ -50,7 +63,7 @@ const calculateLopDays = async (employee, monthStart, monthEnd, settings, holida
   let absentDays = 0;
 
   // 2. Absent working days, if the organisation charges for them.
-  if (settings.salaryStructure?.countAbsentAsLop) {
+  if (settings.salaryStructure?.countAbsentAsLop && !skipAbsences) {
     const paidLeaveDates = new Set();
     const paidLeaves = await Leave.find({
       userId: employee._id,
@@ -128,7 +141,8 @@ const buildPayslipForEmployee = async (employee, month, year, settings) => {
     monthStart,
     monthEnd,
     settings,
-    holidayMap
+    holidayMap,
+    { skipAbsences: !!employee.attendanceExempt }
   );
 
   const dayRate = perDaySalary(monthlyGross, { calendarDays, workingDays }, settings);
@@ -162,9 +176,13 @@ const buildPayslipForEmployee = async (employee, month, year, settings) => {
       pf,
       unpaidLeaveDeduction: lopAmount,
       other,
+      advance: 0,
     },
     grossSalary,
     netSalary: round(Math.max(0, grossSalary - totalDeductions)),
+    // Attendance-exempt: HR types the final amount in the payroll run. The
+    // figures above (fixed salary less unpaid leave) are only the suggestion.
+    manualPay: !!employee.attendanceExempt,
     lop: {
       lopDays,
       unpaidLeaveDays,
@@ -183,7 +201,7 @@ const buildPayslipForEmployee = async (employee, month, year, settings) => {
 // @access  Private (Admin only)
 const runPayroll = async (req, res) => {
   try {
-    const { month, year, dryRun = true, paymentStatus = 'Pending' } = req.body;
+    const { month, year, dryRun = true, paymentStatus = 'Pending', amounts = {} } = req.body;
 
     const targetMonth = parseInt(month, 10);
     const targetYear = parseInt(year, 10);
@@ -201,6 +219,8 @@ const runPayroll = async (req, res) => {
     const existing = await Salary.find({ month: targetMonth, year: targetYear });
     const alreadyPaid = new Set(existing.map((s) => s.userId.toString()));
 
+    const pendingAdvances = await getPendingAdvancesByUser(employees.map((e) => e._id));
+
     const toProcess = [];
     const skipped = [];
 
@@ -215,8 +235,9 @@ const runPayroll = async (req, res) => {
       }
 
       // Without a salary structure there is nothing to pay from, and guessing
-      // a number is worse than reporting the gap.
-      if (!employee.salary || !employee.salary.monthlyGross) {
+      // a number is worse than reporting the gap. Exempt employees are the
+      // exception: HR types their amount, so a structure is only a suggestion.
+      if (!employee.attendanceExempt && (!employee.salary || !employee.salary.monthlyGross)) {
         skipped.push({
           employeeName: employee.name,
           employeeId: employee.employeeId,
@@ -225,7 +246,52 @@ const runPayroll = async (req, res) => {
         continue;
       }
 
-      toProcess.push(await buildPayslipForEmployee(employee, targetMonth, targetYear, settings));
+      const payslip = await buildPayslipForEmployee(employee, targetMonth, targetYear, settings);
+
+      if (payslip.manualPay) {
+        const entered = Number(amounts?.[employee._id.toString()]);
+        const hasAmount = Number.isFinite(entered) && entered > 0;
+
+        // The preview lists them with the suggested figure so HR can fill it
+        // in; only the real run needs an amount, and one left blank waits for
+        // a later run instead of holding up everyone else's pay.
+        if (!hasAmount) {
+          if (!dryRun) {
+            skipped.push({
+              employeeName: employee.name,
+              employeeId: employee.employeeId,
+              reason: 'Attendance not tracked — no amount entered by HR',
+            });
+            continue;
+          }
+        } else if (round(entered) !== payslip.netSalary) {
+          // HR's figure is final, so it replaces the structure on a single line.
+          Object.assign(payslip, {
+            basicSalary: round(entered),
+            hra: 0,
+            allowances: 0,
+            deductions: { tax: 0, pf: 0, unpaidLeaveDeduction: 0, other: 0, advance: 0 },
+            grossSalary: round(entered),
+            netSalary: round(entered),
+            lop: { ...payslip.lop, lopAmount: 0 },
+          });
+        }
+      }
+
+      // Salary already paid in advance comes off this payslip, so it is not
+      // paid a second time. Anything larger than this month's pay carries over.
+      const advances = pendingAdvances[employee._id.toString()] || [];
+      // HR types manual pay before the advance comes off, so the preview hands
+      // back that figure for the amount box.
+      payslip.netBeforeAdvance = payslip.netSalary;
+      if (advances.length > 0) {
+        const recovery = planAdvanceRecovery(advances, payslip.netSalary);
+        payslip.deductions.advance = recovery.total;
+        payslip.netSalary = round(Math.max(0, payslip.netSalary - recovery.total));
+        payslip.advanceRecovery = recovery;
+      }
+
+      toProcess.push(payslip);
     }
 
     const totals = toProcess.reduce(
@@ -233,8 +299,9 @@ const runPayroll = async (req, res) => {
         gross: round(acc.gross + p.grossSalary),
         net: round(acc.net + p.netSalary),
         lop: round(acc.lop + p.lop.lopAmount),
+        advance: round(acc.advance + (p.deductions.advance || 0)),
       }),
-      { gross: 0, net: 0, lop: 0 }
+      { gross: 0, net: 0, lop: 0, advance: 0 }
     );
 
     if (dryRun) {
@@ -263,21 +330,25 @@ const runPayroll = async (req, res) => {
         netSalary: payslip.netSalary,
         paymentStatus,
         paymentDate: new Date(),
-        remarks:
-          payslip.lop.lopDays > 0
-            ? `Monthly payroll · ${payslip.lop.lopDays} LOP day(s) deducted`
-            : 'Monthly payroll run',
+        remarks: [
+          payslip.manualPay
+            ? 'Salary entered by HR (attendance not tracked)'
+            : payslip.lop.lopDays > 0
+              ? `Monthly payroll · ${payslip.lop.lopDays} LOP day(s) deducted`
+              : 'Monthly payroll run',
+          payslip.deductions.advance > 0
+            ? `Advance salary recovered: ₹${payslip.deductions.advance.toLocaleString('en-IN')} (${payslip.advanceRecovery.allocations.map((a) => a.reason).join('; ')})`
+            : '',
+        ]
+          .filter(Boolean)
+          .join(' · '),
       });
       await record.save();
+      if (payslip.advanceRecovery?.allocations.length) {
+        await recordAdvanceRecovery(payslip.advanceRecovery.allocations, record);
+      }
       created.push(record);
-
-      notify({
-        recipients: [payslip.userId],
-        type: 'payslip_generated',
-        title: 'Payslip generated',
-        message: `Your payslip for ${payslip.month}/${payslip.year} is ready. Net pay: ₹${payslip.netSalary}.`,
-        relatedEntity: { kind: 'Salary', id: record._id },
-      });
+      // No employee notification: payslips are shared with employees on request.
     }
 
     res.status(201).json({

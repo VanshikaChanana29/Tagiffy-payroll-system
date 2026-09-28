@@ -28,8 +28,18 @@ const getEscalationRecipientIds = async (employee) => {
 /**
  * Creates one Notification per recipient and fires (non-blocking) emails.
  * Never throws — a notification failure must not break the caller's request.
+ * `emailDetails` is appended to the email body only (e.g. a map link), keeping
+ * the in-app notification text short. `email: false` keeps it in-app only.
  */
-const notify = async ({ recipients, type, title, message, relatedEntity = null }) => {
+const notify = async ({
+  recipients,
+  type,
+  title,
+  message,
+  emailDetails = '',
+  email: shouldEmail = true,
+  relatedEntity = null,
+}) => {
   try {
     const recipientIds = (recipients || []).filter(Boolean).map((id) => id.toString());
     const uniqueIds = [...new Set(recipientIds)];
@@ -44,14 +54,17 @@ const notify = async ({ recipients, type, title, message, relatedEntity = null }
     }));
 
     const created = await Notification.insertMany(docs);
+    if (!shouldEmail) return;
 
     const users = await User.find({ _id: { $in: uniqueIds } }).select('email');
     const emailById = new Map(users.map((u) => [u._id.toString(), u.email]));
 
+    const emailText = emailDetails ? `${message}\n\n${emailDetails}` : message;
+
     await Promise.all(
       created.map(async (doc) => {
         const email = emailById.get(doc.recipient.toString());
-        const sent = await sendEmail({ to: email, subject: title, text: message });
+        const sent = await sendEmail({ to: email, subject: title, text: emailText });
         if (sent) {
           doc.emailSent = true;
           await doc.save();

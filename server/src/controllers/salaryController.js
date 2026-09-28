@@ -4,27 +4,35 @@ const OrgSettings = require('../models/OrgSettings');
 const { canManageEmployee } = require('../utils/teamScope');
 const { isAdminRole } = require('../utils/roles');
 const { buildPayslipPdf } = require('../utils/payslipPdf');
+const {
+  planAdvanceRecovery,
+  getPendingAdvancesByUser,
+  recordAdvanceRecovery,
+} = require('./salaryAdvanceController');
 
 // Helper to compute gross and net salary
 const computeSalaryTotals = (data) => {
   const basic = Number(data.basicSalary) || 0;
   const hra = Number(data.hra) || 0;
   const allowances = Number(data.allowances) || 0;
-  const grossSalary = basic + hra + allowances;
+  const incentive = Number(data.incentive) || 0;
+  const grossSalary = basic + hra + allowances + incentive;
 
   const deductions = data.deductions || {};
   const tax = Number(deductions.tax) || 0;
   const pf = Number(deductions.pf) || 0;
   const unpaidLeaveDeduction = Number(deductions.unpaidLeaveDeduction) || 0;
   const other = Number(deductions.other) || 0;
-  const totalDeductions = tax + pf + unpaidLeaveDeduction + other;
+  const advance = Number(deductions.advance) || 0;
+  const totalDeductions = tax + pf + unpaidLeaveDeduction + other + advance;
 
   const netSalary = Math.max(0, grossSalary - totalDeductions);
 
   return {
     grossSalary,
     netSalary,
-    deductions: { tax, pf, unpaidLeaveDeduction, other },
+    incentive,
+    deductions: { tax, pf, unpaidLeaveDeduction, other, advance },
   };
 };
 
@@ -136,6 +144,7 @@ const createSalaryRecord = async (req, res) => {
       basicSalary,
       hra = 0,
       allowances = 0,
+      incentive = 0,
       deductions = {},
       paymentStatus = 'Paid',
       paymentDate,
@@ -163,12 +172,22 @@ const createSalaryRecord = async (req, res) => {
       });
     }
 
+    // Advances are recovered by the system, never typed in by hand.
     const { grossSalary, netSalary, deductions: calculatedDeductions } = computeSalaryTotals({
       basicSalary,
       hra,
       allowances,
-      deductions,
+      incentive,
+      deductions: { ...deductions, advance: 0 },
     });
+
+    // Take back any salary already paid in advance so it is not paid twice.
+    const pendingAdvances = (await getPendingAdvancesByUser([employee._id]))[employee._id.toString()] || [];
+    const recovery = planAdvanceRecovery(pendingAdvances, netSalary);
+    calculatedDeductions.advance = recovery.total;
+    const finalRemarks = recovery.total > 0
+      ? `${remarks} · Advance salary recovered: ₹${recovery.total.toLocaleString('en-IN')}`
+      : remarks;
 
     const newSalary = new Salary({
       userId,
@@ -177,20 +196,27 @@ const createSalaryRecord = async (req, res) => {
       basicSalary: Number(basicSalary),
       hra: Number(hra),
       allowances: Number(allowances),
+      incentive: Number(incentive),
       deductions: calculatedDeductions,
       grossSalary,
-      netSalary,
+      netSalary: Math.max(0, netSalary - recovery.total),
       paymentStatus,
       paymentDate: paymentDate ? new Date(paymentDate) : new Date(),
-      remarks,
+      remarks: finalRemarks,
     });
 
     await newSalary.save();
+    if (recovery.allocations.length) {
+      await recordAdvanceRecovery(recovery.allocations, newSalary);
+    }
     await newSalary.populate('userId', 'name email employeeId department designation avatar');
 
     res.status(201).json({
       success: true,
-      message: `Payslip for ${employee.name} (${month}/${year}) generated successfully`,
+      message:
+        recovery.total > 0
+          ? `Payslip for ${employee.name} (${month}/${year}) generated · ₹${recovery.total.toLocaleString('en-IN')} advance recovered`
+          : `Payslip for ${employee.name} (${month}/${year}) generated successfully`,
       salary: newSalary,
     });
   } catch (error) {
@@ -213,6 +239,7 @@ const updateSalaryRecord = async (req, res) => {
       basicSalary,
       hra,
       allowances,
+      incentive,
       deductions,
       paymentStatus,
       paymentDate,
@@ -230,6 +257,7 @@ const updateSalaryRecord = async (req, res) => {
     if (basicSalary !== undefined) salary.basicSalary = Number(basicSalary);
     if (hra !== undefined) salary.hra = Number(hra);
     if (allowances !== undefined) salary.allowances = Number(allowances);
+    if (incentive !== undefined) salary.incentive = Number(incentive);
     if (paymentStatus) salary.paymentStatus = paymentStatus;
     if (paymentDate) salary.paymentDate = new Date(paymentDate);
     if (remarks) salary.remarks = remarks;
@@ -244,20 +272,23 @@ const updateSalaryRecord = async (req, res) => {
             : salary.deductions.unpaidLeaveDeduction,
         other:
           deductions.other !== undefined ? Number(deductions.other) : salary.deductions.other,
+        // Recovered advances are tracked against the advance record, so the
+        // edit form cannot change them.
+        advance: salary.deductions.advance || 0,
       };
     }
 
-    // Recalculate totals
-    const totalAllowances =
-      (salary.basicSalary || 0) + (salary.hra || 0) + (salary.allowances || 0);
-    const totalDeductions =
-      (salary.deductions?.tax || 0) +
-      (salary.deductions?.pf || 0) +
-      (salary.deductions?.unpaidLeaveDeduction || 0) +
-      (salary.deductions?.other || 0);
-
-    salary.grossSalary = totalAllowances;
-    salary.netSalary = Math.max(0, totalAllowances - totalDeductions);
+    // Recalculate totals through the same helper createSalaryRecord uses, so the
+    // two write paths can never silently diverge on which components count.
+    const { grossSalary, netSalary } = computeSalaryTotals({
+      basicSalary: salary.basicSalary,
+      hra: salary.hra,
+      allowances: salary.allowances,
+      incentive: salary.incentive,
+      deductions: salary.deductions,
+    });
+    salary.grossSalary = grossSalary;
+    salary.netSalary = netSalary;
 
     await salary.save();
 

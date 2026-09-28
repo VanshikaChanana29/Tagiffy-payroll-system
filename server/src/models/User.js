@@ -126,6 +126,8 @@ const userSchema = new mongoose.Schema(
       },
     ],
 
+    // Legacy stored balance, no longer read. Earned leave is now credited
+    // monthly per department and computed on demand — see utils/leavePolicy.js.
     leaveBalance: {
       paid: { type: Number, default: 12 },
       sick: { type: Number, default: 8 },
@@ -140,6 +142,24 @@ const userSchema = new mongoose.Schema(
     weeklyOffDays: {
       type: [Number],
       default: [],
+    },
+
+    // Personal office timing, for the few people whose day doesn't match the
+    // org shift. HR (admin / super admin) sets it per person. Null start/end
+    // means "use the org default" (OrgSettings.shiftStart/shiftEnd); a null
+    // graceMinutes falls back to the org grace even when the times are custom.
+    customShift: {
+      shiftStart: { type: String, default: null },
+      shiftEnd: { type: String, default: null },
+      graceMinutes: { type: Number, default: null },
+    },
+
+    // For roles whose attendance doesn't matter (field staff, consultants).
+    // HR (admin / super admin) sets it; the employee gets no punch in/out, is
+    // never marked absent, and HR types their pay in each payroll run.
+    attendanceExempt: {
+      type: Boolean,
+      default: false,
     },
     isVerified: {
       type: Boolean,

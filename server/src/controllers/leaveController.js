@@ -6,7 +6,19 @@ const { getVisibleUserIds, canManageEmployee } = require('../utils/teamScope');
 const { isAdminRole } = require('../utils/roles');
 const { getHolidayMap } = require('./holidayController');
 const { notify, getEscalationRecipientIds } = require('../utils/notificationService');
+const {
+  splitWorkingDaysByMonth,
+  getLeaveBalance,
+  withLeaveBalances,
+  checkEarnedAvailability,
+} = require('../utils/leavePolicy');
 const { parseISO, isAfter, format } = require('date-fns');
+
+// 'Paid' is stored, but people know it as Earned leave.
+const typeLabel = (leaveType) => (leaveType === 'Paid' ? 'Earned' : leaveType);
+
+// How a request reads in messages: "Earned leave", "Unpaid leave", "Work From Home".
+const requestLabel = (leaveType) => (leaveType === 'WFH' ? 'Work From Home' : `${typeLabel(leaveType)} leave`);
 
 // @desc    Apply for a new leave
 // @route   POST /api/leaves
@@ -14,7 +26,10 @@ const { parseISO, isAfter, format } = require('date-fns');
 const applyLeave = async (req, res) => {
   try {
     const userId = req.user._id;
-    const { leaveType, startDate, endDate, reason } = req.body;
+    const { startDate, endDate, reason } = req.body;
+    // The app calls it Earned leave; it is stored as 'Paid'.
+    const leaveType = req.body.leaveType === 'Earned' ? 'Paid' : req.body.leaveType;
+    const isWfh = leaveType === 'WFH';
 
     if (!leaveType || !startDate || !endDate || !reason) {
       return res.status(400).json({
@@ -31,6 +46,13 @@ const applyLeave = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'Invalid date format provided. Please use YYYY-MM-DD.',
+      });
+    }
+
+    if (!['Paid', 'Unpaid', 'WFH'].includes(leaveType)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Leave type must be Earned, Unpaid or Work From Home. Sick leave is no longer available.',
       });
     }
 
@@ -61,32 +83,29 @@ const applyLeave = async (req, res) => {
       });
     }
 
-    // Fetch user for balance check
     const user = await User.findById(userId);
     if (!user) {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    // Validate leave balances
+    // Earned leave lapses monthly, so each month the request touches is checked
+    // against that month's own credit. Pending requests already hold their days.
+    const monthlyDays = splitWorkingDaysByMonth(
+      startDate,
+      endDate,
+      settings,
+      holidayMap,
+      req.user.weeklyOffDays
+    );
     if (leaveType === 'Paid') {
-      const availablePaid = user.leaveBalance?.paid || 0;
-      if (daysCount > availablePaid) {
-        return res.status(400).json({
-          success: false,
-          message: `Insufficient Paid leave balance. You requested ${daysCount} days, but only have ${availablePaid} days available.`,
-        });
-      }
-    } else if (leaveType === 'Sick') {
-      const availableSick = user.leaveBalance?.sick || 0;
-      if (daysCount > availableSick) {
-        return res.status(400).json({
-          success: false,
-          message: `Insufficient Sick leave balance. You requested ${daysCount} days, but only have ${availableSick} days available.`,
-        });
+      const shortfall = await checkEarnedAvailability(user, monthlyDays);
+      if (shortfall) {
+        return res.status(400).json({ success: false, message: shortfall });
       }
     }
 
-    // Check for overlapping active leaves (Pending or Approved)
+    // Check for overlapping active leaves (Pending or Approved). WFH counts too:
+    // a day can't be both Work From Home and leave.
     const overlapping = await Leave.findOne({
       userId,
       status: { $in: ['Pending', 'Approved'] },
@@ -98,7 +117,7 @@ const applyLeave = async (req, res) => {
     if (overlapping) {
       return res.status(400).json({
         success: false,
-        message: `You already have an active (${overlapping.status}) leave request overlapping from ${overlapping.startDate} to ${overlapping.endDate}.`,
+        message: `You already have an active (${overlapping.status}) ${requestLabel(overlapping.leaveType)} request overlapping from ${overlapping.startDate} to ${overlapping.endDate}.`,
       });
     }
 
@@ -109,6 +128,7 @@ const applyLeave = async (req, res) => {
       endDate,
       daysCount,
       calendarDays,
+      monthlyDays,
       reason: reason.trim(),
       status: 'Pending',
     });
@@ -118,17 +138,18 @@ const applyLeave = async (req, res) => {
     notify({
       recipients: await getEscalationRecipientIds(user),
       type: 'leave_applied',
-      title: 'New leave request',
-      message: `${user.name} applied for ${daysCount} day(s) of ${leaveType} leave (${startDate} to ${endDate}).`,
+      title: isWfh ? 'New Work From Home request' : 'New leave request',
+      message: `${user.name} applied for ${daysCount} day(s) of ${requestLabel(leaveType)} (${startDate} to ${endDate}).`,
       relatedEntity: { kind: 'Leave', id: newLeave._id },
     });
 
     res.status(201).json({
       success: true,
-      message:
-        calendarDays === daysCount
-          ? `Leave application for ${daysCount} day(s) submitted successfully`
-          : `Leave submitted: ${calendarDays} calendar days, ${daysCount} working day(s) charged.`,
+      message: isWfh
+        ? `Work From Home request for ${daysCount} working day(s) submitted for approval`
+        : calendarDays === daysCount
+        ? `Leave application for ${daysCount} day(s) submitted successfully`
+        : `Leave submitted: ${calendarDays} calendar days, ${daysCount} working day(s) charged.`,
       leave: newLeave,
     });
   } catch (error) {
@@ -148,7 +169,7 @@ const getMyLeaves = async (req, res) => {
   try {
     const userId = (isAdminRole(req.user.role) && req.query.userId) ? req.query.userId : req.user._id;
 
-    const user = await User.findById(userId).select('leaveBalance name employeeId');
+    const user = await User.findById(userId).select('name employeeId department joiningDate');
     const leaves = await Leave.find({ userId })
       .populate('reviewedBy', 'name designation avatar')
       .sort({ createdAt: -1 });
@@ -162,7 +183,7 @@ const getMyLeaves = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      leaveBalance: user.leaveBalance,
+      leaveBalance: await getLeaveBalance(user),
       stats,
       leaves,
     });
@@ -195,7 +216,7 @@ const getAllLeaves = async (req, res) => {
     }
 
     let leaves = await Leave.find(query)
-      .populate('userId', 'name email employeeId department designation avatar leaveBalance')
+      .populate('userId', 'name email employeeId department designation avatar joiningDate')
       .populate('reviewedBy', 'name designation')
       .sort({ createdAt: -1 });
 
@@ -217,6 +238,21 @@ const getAllLeaves = async (req, res) => {
             l.reason.toLowerCase().includes(s))
       );
     }
+
+    // Attach each requester's live earned balance for this month.
+    const requesters = [
+      ...new Map(
+        leaves.filter((l) => l.userId).map((l) => [l.userId._id.toString(), l.userId])
+      ).values(),
+    ];
+    const balances = new Map(
+      (await withLeaveBalances(requesters)).map((u) => [u._id.toString(), u.leaveBalance])
+    );
+    leaves = leaves.map((l) => {
+      const obj = l.toJSON();
+      if (obj.userId) obj.userId.leaveBalance = balances.get(obj.userId._id.toString());
+      return obj;
+    });
 
     const scopeFilter = visibleIds !== null ? { userId: { $in: visibleIds } } : {};
     const allLeavesCount = await Leave.countDocuments(scopeFilter);
@@ -302,37 +338,19 @@ const updateLeaveStatus = async (req, res) => {
       });
     }
 
-    // Handle Leave Balance adjustments
-    if (status === 'Approved' && previousStatus !== 'Approved') {
-      // Deduct balance on transition to Approved
-      if (leave.leaveType === 'Paid') {
-        const available = employee.leaveBalance?.paid || 0;
-        if (leave.daysCount > available) {
-          return res.status(400).json({
-            success: false,
-            message: `Cannot approve. Employee only has ${available} Paid leave days available.`,
-          });
-        }
-        employee.leaveBalance.paid -= leave.daysCount;
-      } else if (leave.leaveType === 'Sick') {
-        const available = employee.leaveBalance?.sick || 0;
-        if (leave.daysCount > available) {
-          return res.status(400).json({
-            success: false,
-            message: `Cannot approve. Employee only has ${available} Sick leave days available.`,
-          });
-        }
-        employee.leaveBalance.sick -= leave.daysCount;
+    // Balances are computed from the leaves themselves, so approving or
+    // rejecting only changes status. Re-check earned leave on approval in case
+    // the department's monthly credit was lowered since the request was made.
+    if (status === 'Approved' && previousStatus !== 'Approved' && leave.leaveType === 'Paid') {
+      const monthlyDays = leave.monthlyDays?.length
+        ? leave.monthlyDays
+        : [{ month: leave.startDate.slice(0, 7), days: leave.daysCount }];
+      const shortfall = await checkEarnedAvailability(employee, monthlyDays, {
+        excludeLeaveId: leave._id,
+      });
+      if (shortfall) {
+        return res.status(400).json({ success: false, message: `Cannot approve. ${shortfall}` });
       }
-      await employee.save();
-    } else if (status === 'Rejected' && previousStatus === 'Approved') {
-      // Refund balance if changing from Approved to Rejected
-      if (leave.leaveType === 'Paid') {
-        employee.leaveBalance.paid += leave.daysCount;
-      } else if (leave.leaveType === 'Sick') {
-        employee.leaveBalance.sick += leave.daysCount;
-      }
-      await employee.save();
     }
 
     // Update leave request
@@ -346,11 +364,11 @@ const updateLeaveStatus = async (req, res) => {
     notify({
       recipients: [employee._id],
       type: status === 'Approved' ? 'leave_approved' : 'leave_rejected',
-      title: `Leave ${status.toLowerCase()}`,
+      title: `${leave.leaveType === 'WFH' ? 'Work From Home' : 'Leave'} ${status.toLowerCase()}`,
       message:
         status === 'Approved'
-          ? `Your ${leave.leaveType} leave from ${leave.startDate} to ${leave.endDate} has been approved.`
-          : `Your ${leave.leaveType} leave from ${leave.startDate} to ${leave.endDate} was rejected: ${adminComment.trim()}`,
+          ? `Your ${requestLabel(leave.leaveType)} from ${leave.startDate} to ${leave.endDate} has been approved.`
+          : `Your ${requestLabel(leave.leaveType)} from ${leave.startDate} to ${leave.endDate} was rejected: ${adminComment.trim()}`,
       relatedEntity: { kind: 'Leave', id: leave._id },
     });
 
@@ -358,7 +376,7 @@ const updateLeaveStatus = async (req, res) => {
       success: true,
       message: `Leave request for ${employee.name} has been ${status.toLowerCase()} successfully`,
       leave,
-      updatedBalance: employee.leaveBalance,
+      updatedBalance: await getLeaveBalance(employee),
     });
   } catch (error) {
     console.error('Update Leave Status Error:', error);
@@ -376,8 +394,8 @@ const updateLeaveStatus = async (req, res) => {
 // @access  Private (owner only)
 //
 // Applied by mistake? The employee withdraws it themselves instead of asking HR
-// to reject it. Approved leave can still be withdrawn until it starts, and the
-// balance is handed back.
+// to reject it. Approved leave can still be withdrawn until it starts; the days
+// free up automatically since balances are computed from active leaves.
 const cancelMyLeave = async (req, res) => {
   try {
     const { id } = req.params;
@@ -420,30 +438,19 @@ const cancelMyLeave = async (req, res) => {
             'This leave has already started. Please ask HR to reverse it instead.',
         });
       }
-
-      // Give the balance back, mirroring the approval deduction.
-      const employee = await User.findById(leave.userId);
-      if (employee) {
-        if (leave.leaveType === 'Paid') {
-          employee.leaveBalance.paid += leave.daysCount;
-        } else if (leave.leaveType === 'Sick') {
-          employee.leaveBalance.sick += leave.daysCount;
-        }
-        await employee.save();
-      }
     }
 
     leave.status = 'Cancelled';
     leave.cancelledAt = new Date();
     await leave.save();
 
-    const employee = await User.findById(leave.userId).select('leaveBalance name reportingManager role');
+    const employee = await User.findById(leave.userId).select('name reportingManager role department joiningDate');
 
     notify({
       recipients: await getEscalationRecipientIds(employee || req.user),
       type: 'leave_cancelled',
-      title: 'Leave request cancelled',
-      message: `${req.user.name} cancelled their ${leave.leaveType} leave request for ${leave.startDate} to ${leave.endDate}.`,
+      title: leave.leaveType === 'WFH' ? 'Work From Home request cancelled' : 'Leave request cancelled',
+      message: `${req.user.name} cancelled their ${requestLabel(leave.leaveType)} request for ${leave.startDate} to ${leave.endDate}.`,
       relatedEntity: { kind: 'Leave', id: leave._id },
     });
 
@@ -451,7 +458,7 @@ const cancelMyLeave = async (req, res) => {
       success: true,
       message: `Leave request for ${leave.startDate} cancelled.`,
       leave,
-      updatedBalance: employee ? employee.leaveBalance : null,
+      updatedBalance: employee ? await getLeaveBalance(employee) : null,
     });
   } catch (error) {
     console.error('Cancel Leave Error:', error);

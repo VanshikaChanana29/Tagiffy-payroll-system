@@ -1,5 +1,6 @@
 const OrgSettings = require('../models/OrgSettings');
 const { parseTimeToMinutes } = require('../utils/attendanceRules');
+const { parseEarnedPerMonth } = require('../utils/leavePolicy');
 
 // @desc    Read the organisation's work rules
 // @route   GET /api/org-settings
@@ -33,6 +34,7 @@ const updateOrgSettings = async (req, res) => {
       overtimeAfterHours,
       workingDays,
       salaryStructure,
+      leavePolicy,
       officeLocation,
       geofenceRadiusMeters,
       officeLocations,
@@ -132,6 +134,13 @@ const updateOrgSettings = async (req, res) => {
       if (salaryStructure.countAbsentAsLop !== undefined) {
         settings.salaryStructure.countAbsentAsLop = !!salaryStructure.countAbsentAsLop;
       }
+    }
+
+    // Company default for departments without their own leave policy.
+    if (leavePolicy?.earnedPerMonth !== undefined) {
+      const { value, error } = parseEarnedPerMonth(leavePolicy.earnedPerMonth);
+      if (error) return res.status(400).json({ success: false, message: error });
+      settings.leavePolicy.earnedPerMonth = value;
     }
 
     if (officeLocation !== undefined) {

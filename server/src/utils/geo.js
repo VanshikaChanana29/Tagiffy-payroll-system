@@ -105,4 +105,90 @@ const formatDistanceMeters = (meters) => {
   return meters >= 1000 ? `${(meters / 1000).toFixed(1)}km` : `${Math.round(meters)}m`;
 };
 
-module.exports = { distanceInMeters, isValidCoordinate, buildPunchLocation, formatDistanceMeters };
+/**
+ * Reverse geocoding (coordinates -> area / city / address) via OpenStreetMap's
+ * free Nominatim service. Its usage policy allows at most 1 request/second and
+ * asks for an identifying User-Agent, so lookups run one at a time and results
+ * are cached per ~11m grid cell. Resolves to null on any failure or when
+ * disabled with REVERSE_GEOCODING=false — callers must cope without an address.
+ */
+const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/reverse';
+const GEOCODE_TIMEOUT_MS = 5000;
+const GEOCODE_GAP_MS = 1100;
+const GEOCODE_CACHE_LIMIT = 500;
+const geocodeCache = new Map();
+let geocodeQueue = Promise.resolve();
+
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const fetchPlace = async (lat, lng) => {
+  try {
+    const url = `${NOMINATIM_URL}?format=jsonv2&addressdetails=1&zoom=18&lat=${lat}&lon=${lng}`;
+    const contact = process.env.GEOCODE_CONTACT_EMAIL ? ` (${process.env.GEOCODE_CONTACT_EMAIL})` : '';
+    const res = await fetch(url, {
+      headers: { 'User-Agent': `DayflowHRMS/1.0${contact}`, 'Accept-Language': 'en' },
+      signal: AbortSignal.timeout(GEOCODE_TIMEOUT_MS),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const a = data.address || {};
+    return {
+      area:
+        a.suburb || a.neighbourhood || a.quarter || a.city_district || a.residential || a.hamlet || a.road || '',
+      city: a.city || a.town || a.village || a.municipality || a.county || a.state_district || '',
+      address: data.display_name || '',
+    };
+  } catch (err) {
+    console.warn('📍 Reverse geocoding failed:', err.message);
+    return null;
+  }
+};
+
+const reverseGeocode = (lat, lng) => {
+  if (process.env.REVERSE_GEOCODING === 'false') return Promise.resolve(null);
+  lat = Number(lat);
+  lng = Number(lng);
+  if (!isValidCoordinate(lat, lng)) return Promise.resolve(null);
+
+  const key = `${lat.toFixed(4)},${lng.toFixed(4)}`;
+  if (geocodeCache.has(key)) return Promise.resolve(geocodeCache.get(key));
+
+  const result = geocodeQueue.then(() => fetchPlace(lat, lng));
+  geocodeQueue = result.then(() => wait(GEOCODE_GAP_MS));
+
+  return result.then((place) => {
+    if (place) {
+      if (geocodeCache.size >= GEOCODE_CACHE_LIMIT) geocodeCache.delete(geocodeCache.keys().next().value);
+      geocodeCache.set(key, place);
+    }
+    return place;
+  });
+};
+
+// { area: 'Sector 14', city: 'Gurugram' } -> "Sector 14, Gurugram"
+const formatPlace = (place) => [place?.area, place?.city].filter(Boolean).join(', ');
+
+// Email-friendly "where exactly" lines for a stored punch location, so HR can
+// open the spot on a map straight from the alert. Empty when there's no fix.
+const describePunchLocation = (location) => {
+  if (!location || location.lat == null || location.lng == null) return '';
+  const lines = [];
+  const place = formatPlace(location);
+  if (place) lines.push(`Area: ${place}`);
+  if (location.address) lines.push(`Address: ${location.address}`);
+  lines.push(`Map: https://www.google.com/maps?q=${location.lat},${location.lng}`);
+  if (Number.isFinite(location.accuracy)) {
+    lines.push(`GPS accuracy: ±${Math.round(location.accuracy)}m`);
+  }
+  return lines.join('\n');
+};
+
+module.exports = {
+  distanceInMeters,
+  isValidCoordinate,
+  buildPunchLocation,
+  formatDistanceMeters,
+  reverseGeocode,
+  formatPlace,
+  describePunchLocation,
+};

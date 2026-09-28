@@ -24,6 +24,12 @@ const departmentSchema = new mongoose.Schema(
       ref: 'User',
       default: null,
     },
+    // Earned leave credited to everyone in this department at the start of each
+    // month. Unused days lapse at month end — nothing carries forward. Null
+    // means "use the company default" (OrgSettings.leavePolicy.earnedPerMonth).
+    leavePolicy: {
+      earnedPerMonth: { type: Number, default: null, min: 0, max: 31 },
+    },
   },
   {
     timestamps: true,

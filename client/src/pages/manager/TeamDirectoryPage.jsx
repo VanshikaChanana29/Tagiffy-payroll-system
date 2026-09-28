@@ -165,13 +165,9 @@ const TeamDirectoryPage = () => {
               </div>
 
               <div className="flex items-center gap-2 pt-2 border-t border-slate-200 dark:border-slate-800 text-[11px]">
-                <span className="text-slate-500 dark:text-slate-400">Leave balance:</span>
+                <span className="text-slate-500 dark:text-slate-400">Earned leave:</span>
                 <span className="font-bold text-slate-800 dark:text-slate-200">
-                  {member.leaveBalance?.paid ?? 0} paid
-                </span>
-                <span className="text-slate-400">·</span>
-                <span className="font-bold text-slate-800 dark:text-slate-200">
-                  {member.leaveBalance?.sick ?? 0} sick
+                  {member.leaveBalance?.paid ?? 0} of {member.leaveBalance?.credit ?? 0} left this month
                 </span>
               </div>
             </div>

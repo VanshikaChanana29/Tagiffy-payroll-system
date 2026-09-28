@@ -17,6 +17,8 @@ const { getVisibleUserIds, getDirectReports } = require('../utils/teamScope');
 const { parseEmployeeSheet, buildEmployeeTemplateWorkbook } = require('../utils/bulkEmployeeImport');
 const { isAdminRole, isSuperAdmin } = require('../utils/roles');
 const { notify, getHrAndOwnerIds } = require('../utils/notificationService');
+const { parseTimeToMinutes } = require('../utils/attendanceRules');
+const { withLeaveBalances } = require('../utils/leavePolicy');
 
 // Documents belong to the employee or to HR — nobody else, ever.
 const canAccessDocuments = (req, employeeId) =>
@@ -31,6 +33,40 @@ const normalizeWeeklyOffDays = (weeklyOffDays) => {
     .map(Number)
     .filter((d) => Number.isInteger(d) && d >= 0 && d <= 6);
   return [...new Set(days)].sort();
+};
+
+const HHMM = /^([01]?\d|2[0-3]):[0-5]\d$/;
+
+// Validates a HR-supplied personal office timing. `null` (or empty start/end)
+// clears it so the employee goes back to the org shift. Returns
+// { value } on success or { error } with a message for the 400 response.
+// Night shifts that cross midnight aren't supported, same as the org shift.
+const normalizeCustomShift = (customShift) => {
+  const cleared = { value: { shiftStart: null, shiftEnd: null, graceMinutes: null } };
+  if (customShift === null) return cleared;
+  if (typeof customShift !== 'object') return { error: 'customShift must be an object or null.' };
+
+  const start = String(customShift.shiftStart || '').trim();
+  const end = String(customShift.shiftEnd || '').trim();
+  if (!start && !end) return cleared;
+
+  if (!HHMM.test(start) || !HHMM.test(end)) {
+    return { error: 'Office start and end must both be valid times in HH:mm format.' };
+  }
+  if (parseTimeToMinutes(end) <= parseTimeToMinutes(start)) {
+    return { error: 'Office end time must be after the start time.' };
+  }
+
+  let graceMinutes = null;
+  const rawGrace = customShift.graceMinutes;
+  if (rawGrace !== null && rawGrace !== undefined && rawGrace !== '') {
+    graceMinutes = Number(rawGrace);
+    if (!Number.isInteger(graceMinutes) || graceMinutes < 0 || graceMinutes > 240) {
+      return { error: 'Grace minutes must be a whole number between 0 and 240.' };
+    }
+  }
+
+  return { value: { shiftStart: start, shiftEnd: end, graceMinutes } };
 };
 
 // Assets follow the same rule: the employee they're assigned to, or HR.
@@ -50,6 +86,10 @@ const removeStoredFile = (storedName) => {
 
 // Validate that department/designation reference existing master data records.
 // Returns an error message string if invalid, or null if valid/not provided.
+// Reads a yes/no flag from JSON (true/false) or a spreadsheet cell ("Y", "Yes", "1").
+const parseFlag = (value) =>
+  value === true || ['true', 'yes', 'y', '1'].includes(String(value ?? '').trim().toLowerCase());
+
 const validateDeptDesignation = async (department, designation) => {
   if (department) {
     const dept = await Department.findOne({ name: new RegExp(`^${department.trim()}$`, 'i') });
@@ -123,7 +163,7 @@ const getAllEmployees = async (req, res) => {
       count: employees.length,
       total,
       departments,
-      employees,
+      employees: await withLeaveBalances(employees),
     });
   } catch (error) {
     console.error('Get All Employees Error:', error);
@@ -167,7 +207,7 @@ const getMyTeam = async (req, res) => {
     res.status(200).json({
       success: true,
       count: team.length,
-      team,
+      team: await withLeaveBalances(team),
     });
   } catch (error) {
     console.error('Get My Team Error:', error);
@@ -205,9 +245,10 @@ const getEmployeeById = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Employee not found' });
     }
 
+    const [withBalance] = await withLeaveBalances([employee]);
     res.status(200).json({
       success: true,
-      employee,
+      employee: withBalance,
     });
   } catch (error) {
     console.error('Get Employee By ID Error:', error);
@@ -280,6 +321,8 @@ const createEmployee = async (req, res) => {
       emergencyContact,
       leaveBalance,
       weeklyOffDays,
+      customShift,
+      attendanceExempt,
     } = req.body;
 
     if (!name || !email || !department || !designation) {
@@ -287,6 +330,11 @@ const createEmployee = async (req, res) => {
         success: false,
         message: 'Please provide name, email, department, and designation',
       });
+    }
+
+    const shiftResult = normalizeCustomShift(customShift ?? null);
+    if (shiftResult.error) {
+      return res.status(400).json({ success: false, message: shiftResult.error });
     }
 
     // Only a super admin may hand out admin-level access; HR admins can
@@ -355,6 +403,10 @@ const createEmployee = async (req, res) => {
       // Left empty (org default) unless HR sets a per-person weekly off, e.g.
       // for a role/office that only takes Sunday off instead of the weekend.
       weeklyOffDays: normalizeWeeklyOffDays(weeklyOffDays) || [],
+      // Empty (org shift) unless HR gives this person their own office timing.
+      customShift: shiftResult.value,
+      // HR decides at onboarding whether this person punches in/out at all.
+      attendanceExempt: parseFlag(attendanceExempt),
     });
 
     // A new hire is payroll-ready the moment they are created, instead of
@@ -588,6 +640,7 @@ const bulkUploadEmployees = async (req, res) => {
           status: 'Active',
           isVerified: true,
           leaveBalance: { paid: 14, sick: 7, unpaid: 0 },
+          attendanceExempt: parseFlag(data.attendanceExempt),
           bankDetails: {
             accountNumber: (data.accountNumber || '').toString().trim(),
             ifscCode: (data.ifscCode || '').toString().trim().toUpperCase(),
@@ -691,6 +744,8 @@ const updateEmployee = async (req, res) => {
         joiningDate,
         dateOfBirth,
         weeklyOffDays,
+        customShift,
+        attendanceExempt,
       } = req.body;
 
       if (department || designation) {
@@ -744,6 +799,16 @@ const updateEmployee = async (req, res) => {
         }
         employee.weeklyOffDays = normalized;
       }
+      // A personal office timing; null clears it back to the org shift. Only
+      // new punches use it — past attendance keeps the late marks it has.
+      if (customShift !== undefined) {
+        const { value, error } = normalizeCustomShift(customShift);
+        if (error) return res.status(400).json({ success: false, message: error });
+        employee.customShift = value;
+      }
+      // Turning this on hides punch in/out and moves their pay to HR-entered
+      // amounts; turning it off brings normal attendance back from today.
+      if (attendanceExempt !== undefined) employee.attendanceExempt = parseFlag(attendanceExempt);
     }
 
     await employee.save();
@@ -913,6 +978,8 @@ const addUserDocument = async (req, res) => {
       type: 'document_uploaded',
       title: 'New document uploaded',
       message: `${employee.name} uploaded ${newDoc.name} (${newDoc.type}). Awaiting verification.`,
+      // In-app only — HR found an email per upload too noisy.
+      email: false,
       relatedEntity: { kind: 'UserDocument', id: savedDoc._id },
     });
 

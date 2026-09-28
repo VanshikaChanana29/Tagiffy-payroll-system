@@ -16,6 +16,10 @@ const NOTIFICATION_TYPES = [
   'document_verified',
   'document_rejected',
   'payslip_generated',
+  'reimbursement_submitted',
+  'reimbursement_approved',
+  'reimbursement_rejected',
+  'reimbursement_cancelled',
 ];
 
 const notificationSchema = new mongoose.Schema(

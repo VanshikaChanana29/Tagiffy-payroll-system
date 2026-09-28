@@ -293,6 +293,14 @@ const MySalaryPage = () => {
                       ₹{selectedPayslip.allowances?.toLocaleString('en-IN')}
                     </span>
                   </div>
+                  {(selectedPayslip.incentive || 0) > 0 && (
+                    <div className="flex justify-between py-1 text-slate-700 dark:text-slate-300 border-b border-slate-100 dark:border-slate-800/60">
+                      <span>Incentive</span>
+                      <span className="font-mono font-semibold text-slate-900 dark:text-white">
+                        ₹{selectedPayslip.incentive?.toLocaleString('en-IN')}
+                      </span>
+                    </div>
+                  )}
                   <div className="flex justify-between py-2.5 text-emerald-600 dark:text-emerald-400 font-bold text-sm pt-2">
                     <span>Total Gross Earnings</span>
                     <span className="font-mono">
@@ -336,6 +344,14 @@ const MySalaryPage = () => {
                       ₹{(selectedPayslip.deductions?.unpaidLeaveDeduction || 0)?.toLocaleString('en-IN')}
                     </span>
                   </div>
+                  {(selectedPayslip.deductions?.advance || 0) > 0 && (
+                    <div className="flex justify-between py-1 text-slate-700 dark:text-slate-300 border-b border-slate-100 dark:border-slate-800/60">
+                      <span>Salary Advance Recovery</span>
+                      <span className="font-mono font-semibold text-slate-900 dark:text-white">
+                        ₹{selectedPayslip.deductions.advance.toLocaleString('en-IN')}
+                      </span>
+                    </div>
+                  )}
                   <div className="flex justify-between py-2.5 text-rose-600 dark:text-rose-400 font-bold text-sm pt-2">
                     <span>Total Deductions</span>
                     <span className="font-mono">

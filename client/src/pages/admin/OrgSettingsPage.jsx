@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Building, Briefcase, Plus, Trash2, Edit2, X, Save, Check, AlertCircle } from 'lucide-react';
+import { Building, Briefcase, Plus, Trash2, Edit2, X, Save, Check, AlertCircle, CalendarDays } from 'lucide-react';
 import api from '../../api/client';
 import ShiftSettingsPanel from '../../components/admin/ShiftSettingsPanel';
 // import SalaryStructurePanel from '../../components/admin/SalaryStructurePanel';
@@ -18,17 +18,28 @@ const OrgSettingsPage = () => {
 
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState(null); // null = create
-  const [form, setForm] = useState({ name: '', code: '', description: '', title: '', department: '' });
+  const [form, setForm] = useState({ name: '', code: '', description: '', title: '', department: '', earnedPerMonth: '' });
+
+  // Earned leave credited monthly to departments without their own policy.
+  const [defaultEarned, setDefaultEarned] = useState('');
+  const [savedDefaultEarned, setSavedDefaultEarned] = useState(null);
+  const [savingDefault, setSavingDefault] = useState(false);
 
   const fetchAll = async () => {
     try {
       setLoading(true);
-      const [deptRes, desigRes] = await Promise.all([
+      const [deptRes, desigRes, orgRes] = await Promise.all([
         api.get('/departments'),
         api.get('/designations'),
+        api.get('/org-settings'),
       ]);
       if (deptRes.data.success) setDepartments(deptRes.data.departments);
       if (desigRes.data.success) setDesignations(desigRes.data.designations);
+      if (orgRes.data.success) {
+        const rate = orgRes.data.settings.leavePolicy?.earnedPerMonth ?? 1;
+        setDefaultEarned(String(rate));
+        setSavedDefaultEarned(rate);
+      }
     } catch (error) {
       toast.error('Failed to load organization settings');
     } finally {
@@ -42,14 +53,21 @@ const OrgSettingsPage = () => {
 
   const openCreateModal = () => {
     setEditing(null);
-    setForm({ name: '', code: '', description: '', title: '', department: departments[0]?._id || '' });
+    setForm({ name: '', code: '', description: '', title: '', department: departments[0]?._id || '', earnedPerMonth: '' });
     setShowModal(true);
   };
 
   const openEditModal = (item) => {
     setEditing(item);
     if (tab === 'departments') {
-      setForm({ name: item.name, code: item.code || '', description: item.description || '', title: '', department: '' });
+      setForm({
+        name: item.name,
+        code: item.code || '',
+        description: item.description || '',
+        title: '',
+        department: '',
+        earnedPerMonth: item.leavePolicy?.earnedPerMonth ?? '',
+      });
     } else {
       setForm({ name: '', code: '', description: item.description || '', title: item.title, department: item.department?._id || '' });
     }
@@ -61,7 +79,13 @@ const OrgSettingsPage = () => {
     setActionLoading(true);
     try {
       if (tab === 'departments') {
-        const payload = { name: form.name, code: form.code, description: form.description };
+        const payload = {
+          name: form.name,
+          code: form.code,
+          description: form.description,
+          // Empty means the department follows the company default.
+          leavePolicy: { earnedPerMonth: form.earnedPerMonth === '' ? null : Number(form.earnedPerMonth) },
+        };
         const res = editing
           ? await api.put(`/departments/${editing._id}`, payload)
           : await api.post('/departments', payload);
@@ -79,6 +103,23 @@ const OrgSettingsPage = () => {
       toast.error(error.response?.data?.message || 'Something went wrong');
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  const handleSaveDefaultEarned = async () => {
+    setSavingDefault(true);
+    try {
+      const res = await api.put('/org-settings', {
+        leavePolicy: { earnedPerMonth: Number(defaultEarned) },
+      });
+      if (res.data.success) {
+        setSavedDefaultEarned(res.data.settings.leavePolicy.earnedPerMonth);
+        toast.success('Default earned leave updated');
+      }
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to update default earned leave');
+    } finally {
+      setSavingDefault(false);
     }
   };
 
@@ -145,6 +186,42 @@ const OrgSettingsPage = () => {
         </button>
       </div>
 
+      {tab === 'departments' && (
+        <div className="rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4 sm:p-5 shadow-sm dark:shadow-card flex flex-col sm:flex-row sm:items-end gap-4 text-xs">
+          <div className="flex-1">
+            <h4 className="font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-1">
+              <CalendarDays className="w-4 h-4 text-brand-500" />
+              Default Earned Leave per month
+            </h4>
+            <p className="text-slate-500 dark:text-slate-400">
+              Credited on the 1st of every month to departments that don&apos;t set their own. Unused
+              days lapse at month end and do not carry forward.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min="0"
+              max="31"
+              step="0.5"
+              value={defaultEarned}
+              onChange={(e) => setDefaultEarned(e.target.value)}
+              className="theme-input w-24"
+            />
+            <span className="text-slate-500 dark:text-slate-400">days</span>
+            <button
+              type="button"
+              onClick={handleSaveDefaultEarned}
+              disabled={savingDefault || defaultEarned === '' || Number(defaultEarned) === savedDefaultEarned}
+              className="px-4 py-2 rounded-xl bg-brand-500 hover:bg-brand-600 text-white font-semibold flex items-center gap-2 disabled:opacity-50"
+            >
+              <Save className="w-4 h-4" />
+              Save
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* List */}
       <div className="rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm dark:shadow-card">
         {loading ? (
@@ -166,6 +243,7 @@ const OrgSettingsPage = () => {
                 <tr>
                   <th className="px-6 py-4">{tab === 'departments' ? 'Department' : 'Designation'}</th>
                   {tab === 'departments' && <th className="px-6 py-4">Code</th>}
+                  {tab === 'departments' && <th className="px-6 py-4">Earned Leave / month</th>}
                   {tab === 'designations' && <th className="px-6 py-4">Department</th>}
                   <th className="px-6 py-4">Description</th>
                   <th className="px-6 py-4 text-right">Actions</th>
@@ -179,6 +257,17 @@ const OrgSettingsPage = () => {
                     </td>
                     {tab === 'departments' && (
                       <td className="px-6 py-4 font-mono text-slate-600 dark:text-slate-300">{item.code || '—'}</td>
+                    )}
+                    {tab === 'departments' && (
+                      <td className="px-6 py-4 text-slate-600 dark:text-slate-300">
+                        {item.leavePolicy?.earnedPerMonth != null ? (
+                          <span className="font-semibold text-slate-900 dark:text-white">
+                            {item.leavePolicy.earnedPerMonth} days
+                          </span>
+                        ) : (
+                          <span className="text-slate-400">Default ({savedDefaultEarned ?? '—'} days)</span>
+                        )}
+                      </td>
                     )}
                     {tab === 'designations' && (
                       <td className="px-6 py-4 text-slate-600 dark:text-slate-300">{item.department?.name || '—'}</td>
@@ -253,6 +342,25 @@ const OrgSettingsPage = () => {
                       placeholder="e.g. CS"
                       className="theme-input w-full"
                     />
+                  </div>
+                  <div>
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Earned Leave per month
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="31"
+                      step="0.5"
+                      value={form.earnedPerMonth}
+                      onChange={(e) => setForm({ ...form, earnedPerMonth: e.target.value })}
+                      placeholder={`Company default (${savedDefaultEarned ?? 1} days)`}
+                      className="theme-input w-full"
+                    />
+                    <p className="text-[10px] text-slate-400 mt-1">
+                      Credited to everyone in this department on the 1st of each month. Unused days
+                      lapse at month end. Leave empty to use the company default.
+                    </p>
                   </div>
                 </>
               ) : (

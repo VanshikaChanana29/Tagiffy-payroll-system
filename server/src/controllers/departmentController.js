@@ -1,5 +1,6 @@
 const Department = require('../models/Department');
 const User = require('../models/User');
+const { parseEarnedPerMonth } = require('../utils/leavePolicy');
 
 // @desc    List all departments
 // @route   GET /api/departments
@@ -26,10 +27,16 @@ const getAllDepartments = async (req, res) => {
 // @access  Private (Admin only)
 const createDepartment = async (req, res) => {
   try {
-    const { name, code, description, headId } = req.body;
+    const { name, code, description, headId, leavePolicy } = req.body;
 
     if (!name || !name.trim()) {
       return res.status(400).json({ success: false, message: 'Department name is required' });
+    }
+
+    // Left empty, the department follows the company default leave policy.
+    const earned = parseEarnedPerMonth(leavePolicy?.earnedPerMonth, { allowNull: true });
+    if (earned.error) {
+      return res.status(400).json({ success: false, message: earned.error });
     }
 
     const existing = await Department.findOne({ name: new RegExp(`^${name.trim()}$`, 'i') });
@@ -45,6 +52,7 @@ const createDepartment = async (req, res) => {
       code: code ? code.trim() : '',
       description: description || '',
       headId: headId || null,
+      leavePolicy: { earnedPerMonth: earned.value },
     });
 
     res.status(201).json({
@@ -68,7 +76,7 @@ const createDepartment = async (req, res) => {
 const updateDepartment = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, code, description, headId } = req.body;
+    const { name, code, description, headId, leavePolicy } = req.body;
 
     const department = await Department.findById(id);
     if (!department) {
@@ -92,6 +100,14 @@ const updateDepartment = async (req, res) => {
     if (code !== undefined) department.code = code.trim();
     if (description !== undefined) department.description = description;
     if (headId !== undefined) department.headId = headId || null;
+
+    // Takes effect at once: balances are computed from the current rate, so this
+    // month's remaining earned leave reflects the new credit immediately.
+    if (leavePolicy?.earnedPerMonth !== undefined) {
+      const { value, error } = parseEarnedPerMonth(leavePolicy.earnedPerMonth, { allowNull: true });
+      if (error) return res.status(400).json({ success: false, message: error });
+      department.leavePolicy = { earnedPerMonth: value };
+    }
 
     await department.save();
 

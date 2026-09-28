@@ -181,6 +181,52 @@ const uploadEmployeeSheet = (req, res, next) => {
   });
 };
 
+// --- Reimbursement receipts (PDF or photo of a bill) ----------------------
+
+const RECEIPT_DIR = process.env.RECEIPT_DIR || path.resolve(__dirname, '../../uploads/receipts');
+fs.mkdirSync(RECEIPT_DIR, { recursive: true });
+
+const MAX_RECEIPT_BYTES = 5 * 1024 * 1024; // 5 MB
+const ALLOWED_RECEIPT_TYPES = { ...ALLOWED_IMAGE_TYPES, 'application/pdf': '.pdf' };
+
+const receiptStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, RECEIPT_DIR),
+  filename: (req, file, cb) => {
+    // No owning record exists yet at upload time (it's created in the same
+    // request), so the name is just a unique token, not keyed to an id.
+    const ext = ALLOWED_RECEIPT_TYPES[file.mimetype] || path.extname(file.originalname) || '.bin';
+    const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+    cb(null, `receipt-${unique}${ext}`);
+  },
+});
+
+const receiptFilter = (req, file, cb) => {
+  if (!ALLOWED_RECEIPT_TYPES[file.mimetype]) {
+    return cb(new Error('Please upload a PDF, JPG, PNG, or WEBP receipt.'));
+  }
+  cb(null, true);
+};
+
+const receiptUpload = multer({
+  storage: receiptStorage,
+  fileFilter: receiptFilter,
+  limits: { fileSize: MAX_RECEIPT_BYTES, files: 1 },
+});
+
+// Receipt is optional, so a request with no file attached is not an error.
+const uploadReceipt = (req, res, next) => {
+  receiptUpload.single('receipt')(req, res, (err) => {
+    if (err) {
+      const message =
+        err.code === 'LIMIT_FILE_SIZE'
+          ? `File is too large. Maximum allowed size is ${MAX_RECEIPT_BYTES / (1024 * 1024)} MB.`
+          : err.message || 'Receipt upload failed';
+      return res.status(400).json({ success: false, message });
+    }
+    next();
+  });
+};
+
 module.exports = {
   uploadDocument,
   UPLOAD_DIR,
@@ -193,4 +239,6 @@ module.exports = {
   isRealImage,
   uploadEmployeeSheet,
   MAX_SHEET_BYTES,
+  uploadReceipt,
+  RECEIPT_DIR,
 };

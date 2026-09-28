@@ -13,6 +13,7 @@ import AdminDashboard from './pages/admin/AdminDashboard';
 import EmployeeDirectoryPage from './pages/admin/EmployeeDirectoryPage';
 import AllAttendancePage from './pages/admin/AllAttendancePage';
 import LeaveApprovalPage from './pages/admin/LeaveApprovalPage';
+import ReimbursementApprovalPage from './pages/admin/ReimbursementApprovalPage';
 import PayrollManagementPage from './pages/admin/PayrollManagementPage';
 import EmployeeContextView from './pages/admin/EmployeeContextView';
 import OrgSettingsPage from './pages/admin/OrgSettingsPage';
@@ -20,6 +21,7 @@ import EmployeeDashboard from './pages/employee/EmployeeDashboard';
 import TeamDirectoryPage from './pages/manager/TeamDirectoryPage';
 import MyAttendancePage from './pages/employee/MyAttendancePage';
 import MyLeavesPage from './pages/employee/MyLeavesPage';
+import MyReimbursementsPage from './pages/employee/MyReimbursementsPage';
 import MySalaryPage from './pages/employee/MySalaryPage';
 
 // Root redirect handler based on authentication status & role
@@ -64,6 +66,7 @@ function App() {
                     <Route path="/admin/employees" element={<EmployeeDirectoryPage />} />
                     <Route path="/admin/attendance" element={<AllAttendancePage />} />
                     <Route path="/admin/leaves" element={<LeaveApprovalPage />} />
+                    <Route path="/admin/reimbursements" element={<ReimbursementApprovalPage />} />
                     <Route path="/admin/payroll" element={<PayrollManagementPage />} />
                     <Route path="/admin/org-settings" element={<OrgSettingsPage />} />
                     <Route path="/admin/profile" element={<ProfilePage />} />
@@ -78,6 +81,7 @@ function App() {
                     <Route path="/team" element={<TeamDirectoryPage />} />
                     <Route path="/team/attendance" element={<AllAttendancePage />} />
                     <Route path="/team/leaves" element={<LeaveApprovalPage />} />
+                    <Route path="/team/reimbursements" element={<ReimbursementApprovalPage />} />
                   </Route>
                 </Route>
 
@@ -87,6 +91,7 @@ function App() {
                     <Route path="/employee" element={<EmployeeDashboard />} />
                     <Route path="/employee/attendance" element={<MyAttendancePage />} />
                     <Route path="/employee/leaves" element={<MyLeavesPage />} />
+                    <Route path="/employee/reimbursements" element={<MyReimbursementsPage />} />
                     <Route path="/employee/salary" element={<MySalaryPage />} />
                     <Route path="/employee/profile" element={<ProfilePage />} />
                   </Route>

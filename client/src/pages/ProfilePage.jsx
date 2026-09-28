@@ -526,10 +526,10 @@ const ProfilePage = () => {
         <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex items-center justify-between transition-colors">
           <div>
             <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider">
-              Paid Leave Balance
+              Earned Leave · This Month
             </span>
             <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1">
-              {user?.leaveBalance?.paid || 0} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">days</span>
+              {user?.leaveBalance?.paid || 0} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">days left</span>
             </div>
           </div>
           <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
@@ -540,10 +540,10 @@ const ProfilePage = () => {
         <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex items-center justify-between transition-colors">
           <div>
             <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider">
-              Sick Leave Balance
+              Monthly Credit
             </span>
             <div className="text-2xl font-black text-brand-600 dark:text-brand-400 mt-1">
-              {user?.leaveBalance?.sick || 0} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">days</span>
+              {user?.leaveBalance?.earnedPerMonth ?? 0} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">days / month</span>
             </div>
           </div>
           <div className="w-10 h-10 rounded-xl bg-brand-500/10 text-brand-600 dark:text-brand-400 flex items-center justify-center">
@@ -554,11 +554,13 @@ const ProfilePage = () => {
         <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex items-center justify-between transition-colors">
           <div>
             <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider">
-              Total Available Leaves
+              Taken This Month
             </span>
             <div className="text-2xl font-black text-brand-600 dark:text-brand-400 mt-1">
-              {(user?.leaveBalance?.paid || 0) + (user?.leaveBalance?.sick || 0)}{' '}
-              <span className="text-xs font-normal text-slate-500 dark:text-slate-400">days</span>
+              {user?.leaveBalance?.used ?? 0}{' '}
+              <span className="text-xs font-normal text-slate-500 dark:text-slate-400">
+                days{user?.leaveBalance?.pending ? ` · ${user.leaveBalance.pending} pending` : ''}
+              </span>
             </div>
           </div>
           <div className="w-10 h-10 rounded-xl bg-brand-500/10 text-brand-600 dark:text-brand-400 flex items-center justify-center">

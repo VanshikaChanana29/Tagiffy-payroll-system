@@ -1,26 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import {
-  CalendarDays,
   Plus,
   Clock,
   CheckCircle2,
   XCircle,
   Search,
-  HeartHandshake,
+  Wallet,
   MessageSquare,
   Ban,
+  Download,
+  Paperclip,
 } from 'lucide-react';
-import ApplyLeaveModal from '../../components/leave/ApplyLeaveModal';
+import SubmitReimbursementModal from '../../components/reimbursement/SubmitReimbursementModal';
 import api from '../../api/client';
+import { downloadReimbursementReceipt, readBlobError } from '../../api/files';
 import { useToast } from '../../context/ToastContext';
-import { useAuth } from '../../context/AuthContext';
-import { leaveTitle } from '../../utils/leave';
 
-const MyLeavesPage = () => {
-  const { user, updateUser } = useAuth();
-  const [leaves, setLeaves] = useState([]);
-  const [leaveBalance, setLeaveBalance] = useState(user?.leaveBalance || { paid: 0 });
-  const [stats, setStats] = useState({ totalApplications: 0, pending: 0, approved: 0, rejected: 0 });
+const MyReimbursementsPage = () => {
+  const [reimbursements, setReimbursements] = useState([]);
+  const [stats, setStats] = useState({ totalApplications: 0, pending: 0, approved: 0, rejected: 0, approvedAmount: 0 });
   const [loading, setLoading] = useState(true);
   const [selectedStatus, setSelectedStatus] = useState('All');
   const [search, setSearch] = useState('');
@@ -28,29 +26,23 @@ const MyLeavesPage = () => {
 
   const toast = useToast();
 
-  const fetchMyLeaves = async () => {
+  const fetchMyReimbursements = async () => {
     try {
       setLoading(true);
-      const res = await api.get('/leaves/my-leaves');
+      const res = await api.get('/reimbursements/my-reimbursements');
       if (res.data.success) {
-        setLeaves(res.data.leaves || []);
-        if (res.data.leaveBalance) {
-          setLeaveBalance(res.data.leaveBalance);
-          updateUser({ leaveBalance: res.data.leaveBalance });
-        }
-        if (res.data.stats) {
-          setStats(res.data.stats);
-        }
+        setReimbursements(res.data.reimbursements || []);
+        if (res.data.stats) setStats(res.data.stats);
       }
     } catch (error) {
-      toast.error('Failed to load leave history');
+      toast.error('Failed to load reimbursement history');
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchMyLeaves();
+    fetchMyReimbursements();
   }, []);
 
   const getStatusBadge = (status) => {
@@ -88,49 +80,49 @@ const MyLeavesPage = () => {
     }
   };
 
-  const filteredLeaves = leaves.filter((l) => {
-    const matchesStatus = selectedStatus === 'All' || l.status === selectedStatus;
+  const filteredReimbursements = reimbursements.filter((r) => {
+    const matchesStatus = selectedStatus === 'All' || r.status === selectedStatus;
     const matchesSearch =
       !search ||
-      l.leaveType.toLowerCase().includes(search.toLowerCase()) ||
-      l.reason.toLowerCase().includes(search.toLowerCase()) ||
-      l.startDate.includes(search);
+      r.category.toLowerCase().includes(search.toLowerCase()) ||
+      r.description.toLowerCase().includes(search.toLowerCase()) ||
+      r.expenseDate.includes(search);
     return matchesStatus && matchesSearch;
   });
 
-
-  const todayStr = new Date().toISOString().slice(0, 10);
-
-  const handleCancelLeave = async (leave) => {
-    const isApproved = leave.status === 'Approved';
-    const confirmed = window.confirm(
-      isApproved
-        ? `Cancel your approved leave for ${leave.startDate}?\n\nThe ${leave.daysCount} day(s) will be added back to your balance.`
-        : `Withdraw your pending request for ${leave.startDate}?`
-    );
+  const handleCancel = async (reimbursement) => {
+    const confirmed = window.confirm(`Withdraw your pending ${reimbursement.category} request for ₹${reimbursement.amount.toLocaleString('en-IN')}?`);
     if (!confirmed) return;
 
     try {
-      const res = await api.put(`/leaves/${leave._id}/cancel`);
+      const res = await api.put(`/reimbursements/${reimbursement._id}/cancel`);
       if (res.data.success) {
         toast.success(res.data.message);
-        fetchMyLeaves();
+        fetchMyReimbursements();
       }
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to cancel leave request');
+      toast.error(err.response?.data?.message || 'Failed to cancel reimbursement request');
+    }
+  };
+
+  const handleDownloadReceipt = async (reimbursement) => {
+    try {
+      await downloadReimbursementReceipt(reimbursement);
+    } catch (err) {
+      toast.error((await readBlobError(err)) || 'Failed to download receipt');
     }
   };
 
   return (
     <div className="space-y-6">
-      {/* Title & Apply Button */}
+      {/* Title & Submit Button */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-            Time Off & Leave Portal
+            Reimbursements
           </h2>
           <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">
-            Apply for planned time-off, track HR approvals, and review available leave quotas.
+            Claim work expenses and track HR approval status.
           </p>
         </div>
 
@@ -139,55 +131,19 @@ const MyLeavesPage = () => {
           className="px-4 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-xs font-semibold flex items-center gap-2 transition-all shrink-0"
         >
           <Plus className="w-4 h-4" />
-          <span>Apply for Leave</span>
+          <span>Submit Reimbursement</span>
         </button>
       </div>
 
-      {/* Leave Balance Overview Cards */}
+      {/* Overview Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex items-center justify-between transition-colors">
-          <div>
-            <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider">
-              Earned Leave · This Month
-            </span>
-            <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1">
-              {leaveBalance?.paid || 0} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">days left</span>
-            </div>
-            <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 block">
-              {leaveBalance?.credit ?? 0} credited · {leaveBalance?.used ?? 0} taken
-              {leaveBalance?.pending ? ` · ${leaveBalance.pending} pending` : ''}
-            </span>
-          </div>
-          <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
-            <CalendarDays className="w-5 h-5" />
-          </div>
-        </div>
-
-        <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex items-center justify-between transition-colors">
-          <div>
-            <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider">
-              Monthly Credit
-            </span>
-            <div className="text-2xl font-black text-brand-600 dark:text-brand-400 mt-1">
-              {leaveBalance?.earnedPerMonth ?? 0} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">days / month</span>
-            </div>
-            <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 block">
-              {user?.department ? `${user.department} policy · ` : ''}unused days lapse at month end
-            </span>
-          </div>
-          <div className="w-10 h-10 rounded-xl bg-brand-500/10 text-brand-600 dark:text-brand-400 flex items-center justify-center">
-            <HeartHandshake className="w-5 h-5" />
-          </div>
-        </div>
-
         <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex items-center justify-between transition-colors">
           <div>
             <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider">
               Pending Requests
             </span>
             <div className="text-2xl font-black text-amber-600 dark:text-amber-400 mt-1">
-              {stats.pending}{' '}
-              <span className="text-xs font-normal text-slate-500 dark:text-slate-400">awaiting review</span>
+              {stats.pending} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">awaiting review</span>
             </div>
             <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 block">HR evaluation queue</span>
           </div>
@@ -195,11 +151,38 @@ const MyLeavesPage = () => {
             <Clock className="w-5 h-5" />
           </div>
         </div>
+
+        <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex items-center justify-between transition-colors">
+          <div>
+            <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider">
+              Approved Amount
+            </span>
+            <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1">
+              ₹{(stats.approvedAmount || 0).toLocaleString('en-IN')}
+            </div>
+            <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 block">{stats.approved} approved claim(s)</span>
+          </div>
+          <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+            <Wallet className="w-5 h-5" />
+          </div>
+        </div>
+
+        <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex items-center justify-between transition-colors">
+          <div>
+            <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider">
+              Rejected
+            </span>
+            <div className="text-2xl font-black text-rose-600 dark:text-rose-400 mt-1">{stats.rejected}</div>
+            <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 block">Total requests: {stats.totalApplications}</span>
+          </div>
+          <div className="w-10 h-10 rounded-xl bg-rose-500/10 text-rose-600 dark:text-rose-400 flex items-center justify-center">
+            <XCircle className="w-5 h-5" />
+          </div>
+        </div>
       </div>
 
       {/* Filter & Search Bar */}
       <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex flex-col sm:flex-row items-center justify-between gap-4">
-        {/* Status Filter Tabs */}
         <div className="flex items-center gap-1.5 p-1 bg-slate-100 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl w-full sm:w-auto">
           {['All', 'Pending', 'Approved', 'Rejected', 'Cancelled'].map((status) => (
             <button
@@ -216,90 +199,85 @@ const MyLeavesPage = () => {
           ))}
         </div>
 
-        {/* Search */}
         <div className="relative w-full sm:w-72">
           <Search className="w-3.5 h-3.5 text-slate-400 absolute inset-y-0 left-3.5 my-auto" />
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search reason or date..."
+            placeholder="Search category or description..."
             className="theme-input w-full pl-10 pr-4 text-xs"
           />
         </div>
       </div>
 
-      {/* Leave History Table */}
+      {/* Reimbursement History Table */}
       <div className="rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm dark:shadow-card transition-colors">
         {loading ? (
           <div className="p-12 text-center text-slate-500 dark:text-slate-400 flex flex-col items-center gap-3">
             <div className="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin"></div>
-            <span className="text-xs">Loading leave history...</span>
+            <span className="text-xs">Loading reimbursement history...</span>
           </div>
-        ) : filteredLeaves.length === 0 ? (
+        ) : filteredReimbursements.length === 0 ? (
           <div className="p-12 text-center text-slate-500 dark:text-slate-400 text-xs">
-            No leave applications found matching your criteria.
+            No reimbursement requests found matching your criteria.
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-100 dark:bg-slate-950/80 text-slate-600 dark:text-slate-400 uppercase font-semibold border-b border-slate-200 dark:border-slate-800">
                 <tr>
-                  <th className="px-6 py-4">Leave Type</th>
-                  <th className="px-6 py-4">Date Range</th>
-                  <th className="px-6 py-4">Duration</th>
-                  <th className="px-6 py-4">Reason / Notes</th>
+                  <th className="px-6 py-4">Category</th>
+                  <th className="px-6 py-4">Amount</th>
+                  <th className="px-6 py-4">Expense Date</th>
+                  <th className="px-6 py-4">Description</th>
+                  <th className="px-6 py-4">Receipt</th>
                   <th className="px-6 py-4">Status</th>
                   <th className="px-6 py-4">HR Comments</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 dark:divide-slate-800/60 font-medium">
-                {filteredLeaves.map((l) => (
-                  <tr key={l._id} className="hover:bg-slate-50 dark:hover:bg-slate-850/50 transition-colors">
+                {filteredReimbursements.map((r) => (
+                  <tr key={r._id} className="hover:bg-slate-50 dark:hover:bg-slate-850/50 transition-colors">
                     <td className="px-6 py-4">
-                      <span
-                        className={`inline-block text-[11px] font-bold px-2.5 py-1 rounded-lg ${
-                          l.leaveType === 'Paid'
-                            ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25'
-                            : l.leaveType === 'WFH'
-                            ? 'bg-sky-500/15 text-sky-700 dark:text-sky-300 border border-sky-500/25'
-                            : 'bg-brand-500/15 text-brand-700 dark:text-brand-300 border border-brand-500/25'
-                        }`}
-                      >
-                        {leaveTitle(l.leaveType)}
+                      <span className="inline-block text-[11px] font-bold px-2.5 py-1 rounded-lg bg-brand-500/15 text-brand-700 dark:text-brand-300 border border-brand-500/25">
+                        {r.category}
                       </span>
                     </td>
 
-                    <td className="px-6 py-4 font-mono text-slate-800 dark:text-slate-200">
-                      <div>
-                        {l.startDate} <span className="text-slate-400">to</span> {l.endDate}
-                      </div>
+                    <td className="px-6 py-4 font-mono font-bold text-slate-900 dark:text-white">
+                      ₹{r.amount?.toLocaleString('en-IN')}
                     </td>
 
-                    <td className="px-6 py-4 font-bold text-slate-900 dark:text-white">
-                      {l.daysCount} {l.daysCount === 1 ? 'day' : 'days'}
-                      {l.calendarDays > l.daysCount && (
-                        <span className="block text-[10px] font-medium text-slate-400 mt-0.5">
-                          {l.calendarDays} calendar days
+                    <td className="px-6 py-4 font-mono text-slate-800 dark:text-slate-200">{r.expenseDate}</td>
+
+                    <td className="px-6 py-4 text-slate-700 dark:text-slate-300 max-w-xs">{r.description}</td>
+
+                    <td className="px-6 py-4">
+                      {r.receipt?.storedName ? (
+                        <button
+                          type="button"
+                          onClick={() => handleDownloadReceipt(r)}
+                          className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-lg text-brand-600 dark:text-brand-400 bg-brand-500/10 hover:bg-brand-500/20 border border-brand-500/25 transition-colors"
+                        >
+                          <Download className="w-3 h-3" />
+                          Receipt
+                        </button>
+                      ) : (
+                        <span className="text-slate-400 italic inline-flex items-center gap-1">
+                          <Paperclip className="w-3 h-3" /> None
                         </span>
                       )}
                     </td>
 
-                    <td className="px-6 py-4 text-slate-700 dark:text-slate-300 max-w-xs">{l.reason}</td>
-
                     <td className="px-6 py-4">
                       <div className="flex flex-col items-start gap-1.5">
-                        {getStatusBadge(l.status)}
-                        {(l.status === 'Pending' ||
-                          (l.status === 'Approved' && l.startDate > todayStr)) && (
+                        {getStatusBadge(r.status)}
+                        {r.status === 'Pending' && (
                           <button
                             type="button"
-                            onClick={() => handleCancelLeave(l)}
-                            title={
-                              l.status === 'Approved'
-                                ? 'Withdraw this approved leave and get the days back'
-                                : 'Withdraw this request'
-                            }
+                            onClick={() => handleCancel(r)}
+                            title="Withdraw this request"
                             className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-lg text-rose-600 dark:text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/25 transition-colors"
                           >
                             <Ban className="w-3 h-3" />
@@ -310,14 +288,14 @@ const MyLeavesPage = () => {
                     </td>
 
                     <td className="px-6 py-4 text-slate-500 dark:text-slate-400 max-w-xs">
-                      {l.adminComment ? (
+                      {r.adminComment ? (
                         <div className="flex items-start gap-1.5 text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-950/60 p-2 rounded-xl border border-slate-200 dark:border-slate-800">
                           <MessageSquare className="w-3.5 h-3.5 text-brand-600 dark:text-brand-400 shrink-0 mt-0.5" />
                           <div>
-                            <span className="text-[11px]">{l.adminComment}</span>
-                            {l.reviewedBy?.name && (
+                            <span className="text-[11px]">{r.adminComment}</span>
+                            {r.reviewedBy?.name && (
                               <span className="text-[10px] text-slate-400 block mt-0.5">
-                                — {l.reviewedBy.name}
+                                — {r.reviewedBy.name}
                               </span>
                             )}
                           </div>
@@ -334,15 +312,13 @@ const MyLeavesPage = () => {
         )}
       </div>
 
-      {/* Apply Leave Modal */}
-      <ApplyLeaveModal
+      <SubmitReimbursementModal
         isOpen={modalOpen}
         onClose={() => setModalOpen(false)}
-        onSuccess={fetchMyLeaves}
-        userBalance={leaveBalance}
+        onSuccess={fetchMyReimbursements}
       />
     </div>
   );
 };
 
-export default MyLeavesPage;
+export default MyReimbursementsPage;

@@ -19,6 +19,7 @@ const COLUMN_ALIASES = {
   accountNumber: ['accountno', 'accountnumber', 'bankaccountno', 'bankaccountnumber'],
   ifscCode: ['ifsccode', 'ifsc'],
   bankName: ['bankname'],
+  attendanceExempt: ['attendanceexempt', 'attendanceexempt(y/n)', 'nopunch', 'punchnotrequired'],
 };
 
 const ALIAS_TO_FIELD = Object.entries(COLUMN_ALIASES).reduce((map, [field, aliases]) => {
@@ -38,6 +39,7 @@ const TEMPLATE_HEADERS = [
   'Account no.',
   'IFSC code',
   'Bank name',
+  'Attendance Exempt (Y/N)',
 ];
 
 const TEMPLATE_SAMPLE_ROW = [
@@ -50,6 +52,7 @@ const TEMPLATE_SAMPLE_ROW = [
   '675110110016199',
   'BKID0006751',
   'Bank of India',
+  'N',
 ];
 
 // Parses an uploaded workbook buffer into row objects keyed by our own field

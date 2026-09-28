@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const { buildInitialsAvatar } = require('../utils/initialsAvatar');
+const { getLeaveBalance, withLeaveBalances } = require('../utils/leavePolicy');
 
 // Helper to generate JWT
 const generateToken = (id, role) => {
@@ -280,7 +281,7 @@ const login = async (req, res) => {
         avatar: user.avatar,
         status: user.status,
         isVerified: user.isVerified,
-        leaveBalance: user.leaveBalance,
+        leaveBalance: await getLeaveBalance(user),
         isFirstLogin,
       },
     });
@@ -307,9 +308,11 @@ const getMe = async (req, res) => {
       });
     }
 
+    const [withBalance] = await withLeaveBalances([user]);
+
     res.status(200).json({
       success: true,
-      user,
+      user: withBalance,
     });
   } catch (error) {
     console.error('Get Profile Error:', error);

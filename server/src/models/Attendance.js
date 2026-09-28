@@ -65,6 +65,11 @@ const attendanceSchema = new mongoose.Schema(
       isOutsideGeofence: { type: Boolean, default: false },
       // Name of the nearest configured office, for display when there's more than one.
       matchedLocationName: { type: String, default: '' },
+      // Reverse-geocoded place, filled in shortly after the punch for alerted
+      // punches (outside geofence / WFH). Empty if the lookup failed.
+      area: { type: String, default: '' },
+      city: { type: String, default: '' },
+      address: { type: String, default: '' },
     },
     checkOutLocation: {
       lat: { type: Number, default: null },
@@ -73,6 +78,9 @@ const attendanceSchema = new mongoose.Schema(
       distanceMeters: { type: Number, default: null },
       isOutsideGeofence: { type: Boolean, default: false },
       matchedLocationName: { type: String, default: '' },
+      area: { type: String, default: '' },
+      city: { type: String, default: '' },
+      address: { type: String, default: '' },
     },
     remarks: {
       type: String,

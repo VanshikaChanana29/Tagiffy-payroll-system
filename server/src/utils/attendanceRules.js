@@ -15,6 +15,29 @@ const parseTimeToMinutes = (hhmm, fallback = 0) => {
 
 const minutesSinceMidnight = (date) => date.getHours() * 60 + date.getMinutes();
 
+const hasCustomShift = (employee) =>
+  !!(employee?.customShift?.shiftStart && employee?.customShift?.shiftEnd);
+
+/**
+ * The rules that apply to one employee: the org settings, with their personal
+ * office timing laid over the shift window when HR has set one. Everything
+ * else (full-day hours, overtime) stays org-wide. Pass the result anywhere a
+ * `settings` object is expected.
+ */
+const resolveEmployeeShift = (settings, employee) => {
+  const base = typeof settings?.toObject === 'function' ? settings.toObject() : { ...settings };
+  if (!hasCustomShift(employee)) return { ...base, isCustomShift: false };
+
+  const { shiftStart, shiftEnd, graceMinutes } = employee.customShift;
+  return {
+    ...base,
+    shiftStart,
+    shiftEnd,
+    graceMinutes: graceMinutes ?? base.graceMinutes,
+    isCustomShift: true,
+  };
+};
+
 /** Minutes late, counting the grace period. 0 when on time. */
 const calculateLateMinutes = (checkIn, settings) => {
   if (!checkIn) return 0;
@@ -114,6 +137,8 @@ const countWorkingDays = (startDateStr, endDateStr, settings, holidayMap = null,
 module.exports = {
   countWorkingDays,
   parseTimeToMinutes,
+  hasCustomShift,
+  resolveEmployeeShift,
   calculateLateMinutes,
   calculateEarlyMinutes,
   calculateOvertimeHours,

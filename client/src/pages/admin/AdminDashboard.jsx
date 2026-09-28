@@ -19,6 +19,7 @@ import {
 import { Link } from 'react-router-dom';
 import api from '../../api/client';
 import { format } from 'date-fns';
+import { leaveTitle } from '../../utils/leave';
 
 const AdminDashboard = () => {
   const { user } = useAuth();
@@ -403,7 +404,7 @@ const AdminDashboard = () => {
                       </span>
                     </div>
                     <div className="text-[11px] text-slate-600 dark:text-slate-300 mt-0.5">
-                      <span className="font-semibold text-brand-600 dark:text-brand-300">{l.leaveType} Leave</span>: {l.startDate} to {l.endDate} ({l.daysCount} days)
+                      <span className="font-semibold text-brand-600 dark:text-brand-300">{leaveTitle(l.leaveType)}</span>: {l.startDate} to {l.endDate} ({l.daysCount} days)
                     </div>
                     <div className="text-[10px] text-slate-500 dark:text-slate-400 italic mt-0.5">
                       "{l.reason}"

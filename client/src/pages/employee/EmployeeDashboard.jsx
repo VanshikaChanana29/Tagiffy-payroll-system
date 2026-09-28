@@ -26,6 +26,7 @@ import MonthAttendanceCalendar from '../../components/attendance/MonthAttendance
 import ApplyLeaveModal from '../../components/leave/ApplyLeaveModal';
 import api from '../../api/client';
 import { format } from 'date-fns';
+import { leaveTitle } from '../../utils/leave';
 
 const EmployeeDashboard = () => {
   const { user } = useAuth();
@@ -118,14 +119,14 @@ const EmployeeDashboard = () => {
         const isRejected = lv.status === 'Rejected';
         const days = lv.daysCount || lv.days || 1;
 
-        let title = `Submitted ${lv.leaveType || 'Paid'} Leave Request`;
+        let title = `Submitted ${leaveTitle(lv.leaveType || 'Paid')} Request`;
         let desc = `${days} day(s) requested for "${lv.reason || 'Personal leave'}"`;
         
         if (isApproved) {
-          title = `${lv.leaveType || 'Paid'} Leave Approved by HR`;
+          title = `${leaveTitle(lv.leaveType || 'Paid')} Approved by HR`;
           if (lv.adminComment) desc = `HR Approval Note: "${lv.adminComment}" (${days} days)`;
         } else if (isRejected) {
-          title = `${lv.leaveType || 'Paid'} Leave Request Rejected`;
+          title = `${leaveTitle(lv.leaveType || 'Paid')} Request Rejected`;
           if (lv.adminComment) desc = `HR Rejection Reason: "${lv.adminComment}"`;
         }
 
@@ -188,8 +189,8 @@ const EmployeeDashboard = () => {
     fetchDashboardData();
   }, []);
 
-  const totalLeaveBalance =
-    (user?.leaveBalance?.paid || 0) + (user?.leaveBalance?.sick || 0);
+  // Earned leave still available this month (unused days lapse at month end).
+  const totalLeaveBalance = user?.leaveBalance?.paid || 0;
 
   const getActivityIcon = (type) => {
     switch (type) {
@@ -255,7 +256,7 @@ const EmployeeDashboard = () => {
               {totalLeaveBalance} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">days</span>
             </div>
             <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 block">
-              {user?.leaveBalance?.paid || 0} Paid • {user?.leaveBalance?.sick || 0} Sick
+              Earned this month · {user?.leaveBalance?.credit ?? 0} credited
             </span>
           </div>
           <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
@@ -498,7 +499,7 @@ const EmployeeDashboard = () => {
         isOpen={leaveModalOpen}
         onClose={() => setLeaveModalOpen(false)}
         onSuccess={fetchDashboardData}
-        userBalance={user?.leaveBalance || { paid: 14, sick: 7, unpaid: 0 }}
+        userBalance={user?.leaveBalance || { paid: 0 }}
       />
     </div>
   );

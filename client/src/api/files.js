@@ -80,3 +80,35 @@ export const uploadEmployeeSheet = (file) => {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
 };
+
+export const MAX_RECEIPT_MB = 5;
+
+/** Submits a reimbursement request, with an optional receipt (PDF or image). */
+export const submitReimbursement = ({ category, amount, expenseDate, description, receipt }) => {
+  const form = new FormData();
+  form.append('category', category);
+  form.append('amount', amount);
+  form.append('expenseDate', expenseDate);
+  form.append('description', description);
+  if (receipt) form.append('receipt', receipt);
+  return api.post('/reimbursements', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+};
+
+/** Downloads a reimbursement's receipt as a blob and saves it via the browser. */
+export const downloadReimbursementReceipt = async (reimbursement) => {
+  const res = await api.get(`/reimbursements/${reimbursement._id}/receipt`, {
+    responseType: 'blob',
+  });
+
+  const contentType = res.headers['content-type'] || 'application/octet-stream';
+  const blobUrl = window.URL.createObjectURL(new Blob([res.data], { type: contentType }));
+  const link = document.createElement('a');
+  link.href = blobUrl;
+  link.download = reimbursement.receipt?.originalName || 'receipt';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(blobUrl);
+};

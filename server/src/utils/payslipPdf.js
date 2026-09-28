@@ -145,10 +145,16 @@ const buildPayslipPdf = (res, { salary, employee, companyName }, pdfOptions = {}
       ]
     : [['Monthly Salary (CTC / 12)', salary.basicSalary]];
 
+  // A one-time bonus for this month only; omitted when zero to avoid noise.
+  if ((Number(salary.incentive) || 0) > 0) {
+    earnings.push(['Incentive', salary.incentive]);
+  }
+
   // Only real, explainable reductions appear. A zero line is noise.
   const deductions = [
     ['Loss of Pay', d.unpaidLeaveDeduction],
     ['Other Deductions', d.other],
+    ['Salary Advance Recovery', d.advance],
     ['Provident Fund', d.pf],
     ['Professional Tax', d.tax],
   ].filter(([, value], index) => index === 0 || (Number(value) || 0) > 0);
@@ -163,7 +169,8 @@ const buildPayslipPdf = (res, { salary, employee, companyName }, pdfOptions = {}
 
   const totalDeductions =
     (Number(d.pf) || 0) + (Number(d.tax) || 0) +
-    (Number(d.unpaidLeaveDeduction) || 0) + (Number(d.other) || 0);
+    (Number(d.unpaidLeaveDeduction) || 0) + (Number(d.other) || 0) +
+    (Number(d.advance) || 0);
 
   doc.font('Helvetica-Bold').fontSize(10).fillColor(ink).text('Gross Earnings', LEFT, totalsY);
   doc.font('Helvetica-Bold').fontSize(10)

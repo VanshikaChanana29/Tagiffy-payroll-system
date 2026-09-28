@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   Timer,
   MapPinOff,
+  CalendarOff,
 } from 'lucide-react';
 import api from '../../api/client';
 import { useToast } from '../../context/ToastContext';
@@ -28,6 +29,7 @@ const CheckInOutWidget = ({ onAttendanceChange }) => {
     isCheckedIn: false,
     isCheckedOut: false,
     attendance: null,
+    attendanceExempt: false,
   });
   const [workMode, setWorkMode] = useState('Office');
   const [remarks, setRemarks] = useState('');
@@ -45,6 +47,7 @@ const CheckInOutWidget = ({ onAttendanceChange }) => {
           isCheckedIn: res.data.isCheckedIn,
           isCheckedOut: res.data.isCheckedOut,
           attendance: res.data.attendance,
+          attendanceExempt: !!res.data.attendanceExempt,
         });
         if (res.data.attendance?.workMode) {
           setWorkMode(res.data.attendance.workMode);
@@ -126,6 +129,23 @@ const CheckInOutWidget = ({ onAttendanceChange }) => {
       <div className="p-6 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-center gap-3 text-slate-500 dark:text-slate-400">
         <div className="w-5 h-5 border-2 border-brand-500 border-t-transparent rounded-full animate-spin"></div>
         <span className="text-xs">Loading today's punch status...</span>
+      </div>
+    );
+  }
+
+  // HR has taken this employee off attendance tracking, so there is nothing to punch.
+  if (statusData.attendanceExempt) {
+    return (
+      <div className="p-6 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-soft flex items-center gap-4 transition-colors">
+        <div className="w-12 h-12 rounded-xl bg-slate-500/10 text-slate-500 dark:text-slate-400 border border-slate-500/20 flex items-center justify-center shrink-0">
+          <CalendarOff className="w-6 h-6" />
+        </div>
+        <div>
+          <h3 className="text-sm font-bold text-slate-900 dark:text-white">Attendance not tracked</h3>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            Punch in/out isn't required for your role. HR handles your monthly pay directly.
+          </p>
+        </div>
       </div>
     );
   }

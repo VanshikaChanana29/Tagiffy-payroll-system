@@ -306,6 +306,12 @@ const AllAttendancePage = () => {
                           <Tooltip
                             label={`Punched in ${r.checkInLocation.distanceMeters}m from ${
                               r.checkInLocation.matchedLocationName || 'office'
+                            }${
+                              r.checkInLocation.area || r.checkInLocation.city
+                                ? ` · near ${[r.checkInLocation.area, r.checkInLocation.city]
+                                    .filter(Boolean)
+                                    .join(', ')}`
+                                : ''
                             }`}
                             side="top"
                           >
@@ -320,6 +326,11 @@ const AllAttendancePage = () => {
                           </Tooltip>
                         )}
                       </div>
+                      {r.checkInLocation?.isOutsideGeofence && (r.checkInLocation.area || r.checkInLocation.city) && (
+                        <div className="text-[11px] font-sans text-amber-700 dark:text-amber-400 mt-0.5">
+                          {[r.checkInLocation.area, r.checkInLocation.city].filter(Boolean).join(', ')}
+                        </div>
+                      )}
                     </td>
 
                     <td className="px-6 py-4 text-slate-600 dark:text-slate-300 font-mono">

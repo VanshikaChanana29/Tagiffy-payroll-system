@@ -7,9 +7,14 @@ const leaveSchema = new mongoose.Schema(
       ref: 'User',
       required: true,
     },
+    // 'Paid' is Earned Leave (shown as "Earned" in the app), credited monthly per
+    // department. 'Sick' is discontinued and only kept so past records load.
+    // 'WFH' is a Work From Home request: same approval flow as leave, but the
+    // employee is working, so it uses no balance, isn't "On Leave" in
+    // attendance, and payroll ignores it.
     leaveType: {
       type: String,
-      enum: ['Paid', 'Sick', 'Unpaid'],
+      enum: ['Paid', 'Sick', 'Unpaid', 'WFH'],
       required: [true, 'Leave type is required'],
     },
     startDate: {
@@ -32,6 +37,19 @@ const leaveSchema = new mongoose.Schema(
     calendarDays: {
       type: Number,
       default: 0,
+    },
+    // daysCount split by month, e.g. [{ month: '2026-10', days: 1 }, { month:
+    // '2026-11', days: 2 }]. Earned leave lapses monthly, so a request spanning
+    // a month end is charged against each month's own credit.
+    monthlyDays: {
+      type: [
+        {
+          _id: false,
+          month: { type: String, required: true }, // YYYY-MM
+          days: { type: Number, required: true },
+        },
+      ],
+      default: [],
     },
     reason: {
       type: String,

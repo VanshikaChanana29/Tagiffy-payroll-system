@@ -16,11 +16,13 @@ import {
   Save,
   PlayCircle,
   Download,
+  HandCoins,
 } from 'lucide-react';
 import api from '../../api/client';
 import { downloadPayslip, readBlobError } from '../../api/payslips';
 import useDepartments from '../../hooks/useDepartments';
 import PayrollRunModal from '../../components/admin/PayrollRunModal';
+import SalaryAdvanceModal from '../../components/admin/SalaryAdvanceModal';
 import { useToast } from '../../context/ToastContext';
 import demoAvatars from '../../utils/avatars';
 import Tooltip from '../../components/common/Tooltip';
@@ -28,6 +30,7 @@ import Tooltip from '../../components/common/Tooltip';
 const PayrollManagementPage = () => {
   const departments = useDepartments();
   const [showRunModal, setShowRunModal] = useState(false);
+  const [showAdvanceModal, setShowAdvanceModal] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [department, setDepartment] = useState('All');
@@ -56,6 +59,7 @@ const PayrollManagementPage = () => {
     basicSalary: 0,
     hra: 0,
     allowances: 0,
+    incentive: 0,
     deductions: { tax: 0, pf: 0, unpaidLeaveDeduction: 0, other: 0 },
     paymentStatus: 'Paid',
     remarks: 'Monthly salary disbursement',
@@ -111,7 +115,7 @@ const PayrollManagementPage = () => {
 
   // Selecting an employee pulls their monthly pay straight from their CTC.
   const handleSelectEmployeeForPayslip = (userId) => {
-    const employee = employees.find((emp) => emp._id === userId);
+    const employee = employeesList.find((emp) => emp._id === userId);
     const monthly = employee?.salary?.monthlyGross || 0;
     setNewSalary((prev) => ({ ...prev, userId, basicSalary: monthly }));
   };
@@ -208,6 +212,15 @@ const PayrollManagementPage = () => {
 
           Run Payroll
 
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setShowAdvanceModal(true)}
+          className="px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold flex items-center gap-2 shadow-sm shrink-0"
+        >
+          <HandCoins className="w-4 h-4" />
+          Advance Salary
         </button>
 
         <button
@@ -562,7 +575,29 @@ const PayrollManagementPage = () => {
                     payroll run works this out automatically.
                   </p>
                 </div>
+
+                <div>
+                  <label className="block text-slate-600 dark:text-slate-400 mb-1">
+                    Incentive (₹)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={newSalary.incentive}
+                    onChange={(e) =>
+                      setNewSalary({ ...newSalary, incentive: Number(e.target.value) })
+                    }
+                    className="theme-input w-full"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    One-time bonus for this month only, on top of the regular pay.
+                  </p>
+                </div>
               </div>
+
+              <p className="text-[10px] text-amber-600 dark:text-amber-400">
+                Any pending advance salary for this employee is deducted automatically when the payslip is saved.
+              </p>
 
               {/* Calculated preview */}
               <div className="p-3.5 rounded-xl bg-brand-50 dark:bg-brand-950/40 border border-brand-200 dark:border-brand-800/40 flex justify-between items-center text-xs">
@@ -571,7 +606,8 @@ const PayrollManagementPage = () => {
                   ₹
                   {Math.max(
                     0,
-                    Number(newSalary.basicSalary || 0) -
+                    Number(newSalary.basicSalary || 0) +
+                      Number(newSalary.incentive || 0) -
                       Number(newSalary.deductions?.unpaidLeaveDeduction || 0)
                   ).toLocaleString('en-IN')}
                 </span>
@@ -648,6 +684,23 @@ const PayrollManagementPage = () => {
                     }
                     className="theme-input w-full"
                   />
+                </div>
+                <div>
+                  <label className="block text-slate-600 dark:text-slate-400 mb-1">
+                    Incentive (₹)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={selectedRecord.incentive || 0}
+                    onChange={(e) =>
+                      setSelectedRecord({ ...selectedRecord, incentive: Number(e.target.value) })
+                    }
+                    className="theme-input w-full"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    One-time bonus for this month only, on top of the regular pay.
+                  </p>
                 </div>
               </div>
 
@@ -818,6 +871,12 @@ const PayrollManagementPage = () => {
                     <span>Allowances:</span>
                     <span className="font-mono font-semibold">₹{selectedRecord.allowances?.toLocaleString('en-IN')}</span>
                   </div>
+                  {(selectedRecord.incentive || 0) > 0 && (
+                    <div className="flex justify-between text-slate-700 dark:text-slate-300">
+                      <span>Incentive:</span>
+                      <span className="font-mono font-semibold">₹{selectedRecord.incentive?.toLocaleString('en-IN')}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-bold pt-1 border-t border-slate-200 dark:border-slate-800">
                     <span>Gross:</span>
                     <span className="font-mono">₹{selectedRecord.grossSalary?.toLocaleString('en-IN')}</span>
@@ -844,6 +903,18 @@ const PayrollManagementPage = () => {
                     <span>Unpaid Leave:</span>
                     <span className="font-mono font-semibold">₹{(selectedRecord.deductions?.unpaidLeaveDeduction || 0)?.toLocaleString('en-IN')}</span>
                   </div>
+                  {(selectedRecord.deductions?.other || 0) > 0 && (
+                    <div className="flex justify-between text-slate-700 dark:text-slate-300">
+                      <span>Other:</span>
+                      <span className="font-mono font-semibold">₹{selectedRecord.deductions.other.toLocaleString('en-IN')}</span>
+                    </div>
+                  )}
+                  {(selectedRecord.deductions?.advance || 0) > 0 && (
+                    <div className="flex justify-between text-slate-700 dark:text-slate-300">
+                      <span>Advance Recovery:</span>
+                      <span className="font-mono font-semibold">₹{selectedRecord.deductions.advance.toLocaleString('en-IN')}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between text-rose-600 dark:text-rose-400 font-bold pt-1 border-t border-slate-200 dark:border-slate-800">
                     <span>Total Deductions:</span>
                     <span className="font-mono">₹{(selectedRecord.grossSalary - selectedRecord.netSalary)?.toLocaleString('en-IN')}</span>
@@ -869,6 +940,12 @@ const PayrollManagementPage = () => {
             </div>
           </div>
         </div>
+      )}
+      {showAdvanceModal && (
+        <SalaryAdvanceModal
+          employees={employeesList}
+          onClose={() => setShowAdvanceModal(false)}
+        />
       )}
       {showRunModal && (
         <PayrollRunModal

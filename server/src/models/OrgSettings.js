@@ -62,6 +62,13 @@ const orgSettingsSchema = new mongoose.Schema(
       default: [],
     },
 
+    // --- Leave rules ---
+    // Earned leave credited each month to departments that don't set their own
+    // (Department.leavePolicy). Unused days lapse at month end.
+    leavePolicy: {
+      earnedPerMonth: { type: Number, default: 1, min: 0, max: 31 },
+    },
+
     // --- Salary rules ---
     // Monthly pay is simply CTC / 12. The only settings left are how loss of
     // pay is priced and whether absent days cost pay.

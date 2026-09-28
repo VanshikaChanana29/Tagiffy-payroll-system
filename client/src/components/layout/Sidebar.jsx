@@ -10,6 +10,7 @@ import {
   LogOut,
   X,
   Building2,
+  Receipt,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
@@ -35,11 +36,13 @@ const Sidebar = ({ isOpen, onClose }) => {
     { label: 'Employees', path: '/admin/employees', icon: Users },
     { label: 'Attendance', path: '/admin/attendance', icon: Clock },
     { label: 'Time Off', path: '/admin/leaves', icon: CalendarDays },
+    { label: 'Reimbursements', path: '/admin/reimbursements', icon: Receipt },
     { label: 'Payroll', path: '/admin/payroll', icon: DollarSign },
     { label: 'Org Settings', path: '/admin/org-settings', icon: Building2 },
     { label: 'My Attendance', path: '/employee/attendance', icon: Clock },
     { label: 'My Time Off', path: '/employee/leaves', icon: CalendarDays },
     { label: 'My Payslips', path: '/employee/salary', icon: DollarSign },
+    { label: 'My Reimbursements', path: '/employee/reimbursements', icon: Receipt },
     { label: 'My Profile', path: '/admin/profile', icon: UserCircle },
   ];
 
@@ -48,6 +51,7 @@ const Sidebar = ({ isOpen, onClose }) => {
     { label: 'My Attendance', path: '/employee/attendance', icon: Clock },
     { label: 'My Time Off', path: '/employee/leaves', icon: CalendarDays },
     { label: 'My Payslips', path: '/employee/salary', icon: DollarSign },
+    { label: 'My Reimbursements', path: '/employee/reimbursements', icon: Receipt },
     { label: 'My Profile', path: '/employee/profile', icon: UserCircle },
   ];
 
@@ -58,9 +62,11 @@ const Sidebar = ({ isOpen, onClose }) => {
     { label: 'My Team', path: '/team', icon: Users },
     { label: 'Team Attendance', path: '/team/attendance', icon: Clock },
     { label: 'Team Time Off', path: '/team/leaves', icon: CalendarDays },
+    { label: 'Team Reimbursements', path: '/team/reimbursements', icon: Receipt },
     { label: 'My Attendance', path: '/employee/attendance', icon: Clock },
     { label: 'My Time Off', path: '/employee/leaves', icon: CalendarDays },
     { label: 'My Payslips', path: '/employee/salary', icon: DollarSign },
+    { label: 'My Reimbursements', path: '/employee/reimbursements', icon: Receipt },
     { label: 'My Profile', path: '/employee/profile', icon: UserCircle },
   ];
 

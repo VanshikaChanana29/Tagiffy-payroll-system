@@ -30,11 +30,13 @@ import {
   Laptop,
   Hash,
   Edit2,
+  CalendarOff,
 } from 'lucide-react';
 import { useEmployeeInspection } from '../../context/EmployeeInspectionContext';
 import { useToast } from '../../context/ToastContext';
 import demoAvatars from '../../utils/avatars';
 import api from '../../api/client';
+import { leaveTitle } from '../../utils/leave';
 import {
   uploadDocument,
   downloadDocument,
@@ -69,6 +71,8 @@ const EmployeeContextView = () => {
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [editFormData, setEditFormData] = useState({});
   const [savingProfile, setSavingProfile] = useState(false);
+  // Company-wide shift, shown next to the personal-timing override for context.
+  const [orgShift, setOrgShift] = useState(null);
 
   // Add Document Modal
   const [showAddDocModal, setShowAddDocModal] = useState(false);
@@ -127,6 +131,13 @@ const EmployeeContextView = () => {
             phone: u.emergencyContact?.phone || '',
           },
           weeklyOffDays: Array.isArray(u.weeklyOffDays) ? u.weeklyOffDays : [],
+          customShift: {
+            enabled: !!(u.customShift?.shiftStart && u.customShift?.shiftEnd),
+            shiftStart: u.customShift?.shiftStart || '',
+            shiftEnd: u.customShift?.shiftEnd || '',
+            graceMinutes: u.customShift?.graceMinutes ?? '',
+          },
+          attendanceExempt: !!u.attendanceExempt,
         });
       }
 
@@ -145,7 +156,7 @@ const EmployeeContextView = () => {
       // 3. Leave Data
       const lData = leaveRes.status === 'fulfilled' ? leaveRes.value.data : {};
       setLeaveData({
-        balance: lData.leaveBalance || inspectedEmployee.leaveBalance || { paid: 14, sick: 7, unpaid: 0 },
+        balance: lData.leaveBalance || inspectedEmployee.leaveBalance || { paid: 0 },
         stats: lData.stats || null,
         leaves: lData.leaves || [],
       });
@@ -192,7 +203,7 @@ const EmployeeContextView = () => {
         activities.push({
           id: `leave-${lv._id}`,
           type: 'leave',
-          title: `Time-Off: ${lv.leaveType} Leave`,
+          title: `Time-Off: ${leaveTitle(lv.leaveType)}`,
           description: `${lv.daysCount || lv.days || 1} day(s) from ${lv.startDate} to ${lv.endDate}`,
           timestamp: new Date(lv.createdAt || lv.startDate),
           status: lv.status,
@@ -237,12 +248,35 @@ const EmployeeContextView = () => {
     fetchAllEmployeeData();
   }, [inspectedEmployee?._id]);
 
+  useEffect(() => {
+    api
+      .get('/org-settings')
+      .then((res) => {
+        if (res.data.success) setOrgShift(res.data.settings);
+      })
+      .catch(() => {});
+  }, []);
+
   const handleSaveProfile = async (e) => {
     e.preventDefault();
     if (!inspectedEmployee?._id) return;
+
+    // The toggle is UI-only: off sends null, which puts them back on the org shift.
+    const { customShift, ...rest } = editFormData;
+    const payload = {
+      ...rest,
+      customShift: customShift?.enabled
+        ? {
+            shiftStart: customShift.shiftStart,
+            shiftEnd: customShift.shiftEnd,
+            graceMinutes: customShift.graceMinutes === '' ? null : Number(customShift.graceMinutes),
+          }
+        : null,
+    };
+
     try {
       setSavingProfile(true);
-      const res = await api.put(`/users/${inspectedEmployee._id}`, editFormData);
+      const res = await api.put(`/users/${inspectedEmployee._id}`, payload);
       if (res.data.success) {
         toast.success(`Updated ${res.data.employee.name}'s profile details`);
         setProfileData(res.data.employee);
@@ -542,21 +576,21 @@ const EmployeeContextView = () => {
               </p>
             </div>
 
-            {/* Metric 2: Paid Leave Balance */}
+            {/* Metric 2: Earned Leave Balance */}
             <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                  Paid Leave Balance
+                  Earned Leave · This Month
                 </span>
                 <div className="w-8 h-8 rounded-xl bg-brand-500/15 text-brand-600 dark:text-brand-400 flex items-center justify-center">
                   <HeartHandshake className="w-4 h-4" />
                 </div>
               </div>
               <div className="text-xl font-black text-slate-900 dark:text-white">
-                {leaveData.balance?.paid ?? 14} Days
+                {leaveData.balance?.paid ?? 0} Days Left
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Sick balance: {leaveData.balance?.sick ?? 7} days
+                {leaveData.balance?.credit ?? 0} credited this month · lapses at month end
               </p>
             </div>
 
@@ -895,6 +929,132 @@ const EmployeeContextView = () => {
               </div>
             </div>
 
+            {/* Office Timing — most people follow the org shift from Org Settings; HR can
+                give a few people their own start/end time. Late marks and early exits are
+                then judged against this timing, from their next punch onwards. */}
+            <div className="pt-4 border-t border-slate-200 dark:border-slate-800 text-xs">
+              <h4 className="font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-1">
+                <Clock className="w-4 h-4 text-brand-500" />
+                Office Timing
+              </h4>
+              <p className="text-slate-500 dark:text-slate-400 mb-3">
+                Company default:{' '}
+                <span className="font-semibold text-slate-700 dark:text-slate-300">
+                  {orgShift ? `${orgShift.shiftStart} – ${orgShift.shiftEnd}, ${orgShift.graceMinutes} min grace` : '—'}
+                </span>
+                . Give this employee their own timing only if their day differs. Changes apply
+                from their next check-in; past attendance is not recalculated.
+              </p>
+
+              <label className="inline-flex items-center gap-2 mb-3 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  disabled={!isEditingProfile}
+                  checked={!editFormData.customShift?.enabled}
+                  onChange={(e) =>
+                    setEditFormData({
+                      ...editFormData,
+                      customShift: {
+                        ...editFormData.customShift,
+                        enabled: !e.target.checked,
+                        // Start from the company timing so HR only edits what differs.
+                        shiftStart: editFormData.customShift?.shiftStart || orgShift?.shiftStart || '',
+                        shiftEnd: editFormData.customShift?.shiftEnd || orgShift?.shiftEnd || '',
+                      },
+                    })
+                  }
+                  className="w-4 h-4 accent-brand-600 disabled:cursor-not-allowed"
+                />
+                <span className="font-semibold text-slate-700 dark:text-slate-300">
+                  Use company default timing
+                </span>
+              </label>
+
+              {editFormData.customShift?.enabled && (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-slate-600 dark:text-slate-400 mb-1">Office Start</label>
+                    <input
+                      type="time"
+                      required
+                      disabled={!isEditingProfile}
+                      value={editFormData.customShift.shiftStart}
+                      onChange={(e) =>
+                        setEditFormData({
+                          ...editFormData,
+                          customShift: { ...editFormData.customShift, shiftStart: e.target.value },
+                        })
+                      }
+                      className="theme-input w-full"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-600 dark:text-slate-400 mb-1">Office End</label>
+                    <input
+                      type="time"
+                      required
+                      disabled={!isEditingProfile}
+                      value={editFormData.customShift.shiftEnd}
+                      onChange={(e) =>
+                        setEditFormData({
+                          ...editFormData,
+                          customShift: { ...editFormData.customShift, shiftEnd: e.target.value },
+                        })
+                      }
+                      className="theme-input w-full"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-600 dark:text-slate-400 mb-1">
+                      Grace (min)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="240"
+                      disabled={!isEditingProfile}
+                      placeholder={orgShift ? `${orgShift.graceMinutes} (company)` : 'Company default'}
+                      value={editFormData.customShift.graceMinutes}
+                      onChange={(e) =>
+                        setEditFormData({
+                          ...editFormData,
+                          customShift: { ...editFormData.customShift, graceMinutes: e.target.value },
+                        })
+                      }
+                      className="theme-input w-full"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Attendance tracking — for roles where punch in/out doesn't matter. Off
+                means no punch buttons, no absences, and HR enters their pay each run. */}
+            <div className="pt-4 border-t border-slate-200 dark:border-slate-800 text-xs">
+              <h4 className="font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-1">
+                <CalendarOff className="w-4 h-4 text-brand-500" />
+                Attendance Tracking
+              </h4>
+              <p className="text-slate-500 dark:text-slate-400 mb-3">
+                Turn this on for employees who don't need to punch in/out. They won't see the
+                punch option, won't be marked absent, and HR enters their salary in each payroll run.
+              </p>
+              <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  disabled={!isEditingProfile}
+                  checked={!!editFormData.attendanceExempt}
+                  onChange={(e) =>
+                    setEditFormData({ ...editFormData, attendanceExempt: e.target.checked })
+                  }
+                  className="w-4 h-4 accent-brand-600 disabled:cursor-not-allowed"
+                />
+                <span className="font-semibold text-slate-700 dark:text-slate-300">
+                  Punch in/out not required
+                </span>
+              </label>
+            </div>
+
             {/* Address & Emergency Contact */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-slate-200 dark:border-slate-800 text-xs">
               <div className="space-y-3">
@@ -1151,22 +1311,28 @@ const EmployeeContextView = () => {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="p-5 rounded-xl bg-emerald-500/10 dark:bg-emerald-950/40 border border-emerald-500/30 space-y-1">
               <span className="text-xs font-bold uppercase text-emerald-800 dark:text-emerald-300">
-                Paid Leave Quota
+                Earned Leave · This Month
               </span>
               <div className="text-2xl font-black text-emerald-700 dark:text-emerald-200">
-                {leaveData.balance?.paid ?? 14} Days Remaining
+                {leaveData.balance?.paid ?? 0} Days Remaining
               </div>
-              <p className="text-xs text-emerald-600 dark:text-emerald-400">Annual standard allocation</p>
+              <p className="text-xs text-emerald-600 dark:text-emerald-400">
+                {leaveData.balance?.used ?? 0} taken
+                {leaveData.balance?.pending ? ` · ${leaveData.balance.pending} pending` : ''} · unused days
+                lapse at month end
+              </p>
             </div>
 
             <div className="p-5 rounded-xl bg-blue-500/10 dark:bg-blue-950/40 border border-blue-500/30 space-y-1">
               <span className="text-xs font-bold uppercase text-blue-800 dark:text-blue-300">
-                Sick Leave Quota
+                Monthly Credit
               </span>
               <div className="text-2xl font-black text-blue-700 dark:text-blue-200">
-                {leaveData.balance?.sick ?? 7} Days Remaining
+                {leaveData.balance?.earnedPerMonth ?? 0} Days / Month
               </div>
-              <p className="text-xs text-blue-600 dark:text-blue-400">Medical emergency allowance</p>
+              <p className="text-xs text-blue-600 dark:text-blue-400">
+                {inspectedEmployee?.department ? `${inspectedEmployee.department} policy` : 'Department policy'}
+              </p>
             </div>
 
             <div className="p-5 rounded-xl bg-brand-500/10 dark:bg-brand-950/40 border border-brand-500/30 space-y-1">
@@ -1200,7 +1366,7 @@ const EmployeeContextView = () => {
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-bold text-slate-900 dark:text-white">
-                          {l.leaveType} Leave
+                          {leaveTitle(l.leaveType)}
                         </span>
                         <span className="text-xs font-mono font-semibold px-2 py-0.5 rounded bg-brand-500/10 text-brand-600 dark:text-brand-300">
                           {l.daysCount || l.days || 1} day(s)

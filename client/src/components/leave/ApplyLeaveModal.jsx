@@ -39,33 +39,19 @@ const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, userBalance }) => {
         return;
       }
 
-      const diff = differenceInCalendarDays(end, start) + 1;
-      setDaysCount(diff);
+      // Earned leave is checked on the server, per month and in working days
+      // (weekends, holidays and a future month's own credit are only known there).
+      setDaysCount(differenceInCalendarDays(end, start) + 1);
       setErrorMsg('');
-
-      // Check balance warning
-      if (leaveType === 'Paid' && userBalance?.paid !== undefined && diff > userBalance.paid) {
-        setErrorMsg(
-          `Requested days (${diff}) exceed available Paid balance (${userBalance.paid} days)`
-        );
-      } else if (
-        leaveType === 'Sick' &&
-        userBalance?.sick !== undefined &&
-        diff > userBalance.sick
-      ) {
-        setErrorMsg(
-          `Requested days (${diff}) exceed available Sick balance (${userBalance.sick} days)`
-        );
-      }
     }
-  }, [startDate, endDate, leaveType, userBalance]);
+  }, [startDate, endDate]);
 
   if (!isOpen) return null;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!reason.trim()) {
-      toast.error('Please specify a reason for your leave');
+      toast.error(leaveType === 'WFH' ? 'Please specify a reason for working from home' : 'Please specify a reason for your leave');
       return;
     }
     if (errorMsg) {
@@ -105,7 +91,9 @@ const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, userBalance }) => {
             </div>
             <div>
               <h3 className="text-lg font-bold text-slate-900 dark:text-white">Apply for Time Off</h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">Submit a leave request for HR approval</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Submit a leave or Work From Home request for HR approval
+              </p>
             </div>
           </div>
           <Tooltip label="Close" side="left">
@@ -123,7 +111,8 @@ const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, userBalance }) => {
           <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
             Select Leave Category
           </label>
-          <div className="grid grid-cols-3 gap-2.5">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+            {/* Stored as 'Paid'; shown as Earned leave, credited monthly per department. */}
             <button
               type="button"
               onClick={() => setLeaveType('Paid')}
@@ -133,24 +122,9 @@ const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, userBalance }) => {
                   : 'bg-slate-50 dark:bg-slate-950/60 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
-              <div className="text-xs font-bold text-emerald-600 dark:text-emerald-400">Paid Leave</div>
+              <div className="text-xs font-bold text-emerald-600 dark:text-emerald-400">Earned Leave</div>
               <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                {userBalance?.paid ?? 14} days left
-              </div>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setLeaveType('Sick')}
-              className={`p-3 rounded-xl border text-left transition-all ${
-                leaveType === 'Sick'
-                  ? 'bg-brand-50 dark:bg-brand-950/50 border-brand-500 text-slate-900 dark:text-white shadow-sm ring-1 ring-brand-500'
-                  : 'bg-slate-50 dark:bg-slate-950/60 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <div className="text-xs font-bold text-brand-600 dark:text-brand-400">Sick Leave</div>
-              <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                {userBalance?.sick ?? 7} days left
+                {userBalance?.paid ?? 0} left this month
               </div>
             </button>
 
@@ -165,6 +139,19 @@ const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, userBalance }) => {
             >
               <div className="text-xs font-bold text-brand-600 dark:text-brand-400">Unpaid</div>
               <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Salary adjusted</div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setLeaveType('WFH')}
+              className={`p-3 rounded-xl border text-left transition-all ${
+                leaveType === 'WFH'
+                  ? 'bg-sky-50 dark:bg-sky-950/50 border-sky-500 text-slate-900 dark:text-white shadow-sm ring-1 ring-sky-500'
+                  : 'bg-slate-50 dark:bg-slate-950/60 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <div className="text-xs font-bold text-sky-600 dark:text-sky-400">Work From Home</div>
+              <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">No leave deducted</div>
             </button>
           </div>
         </div>
@@ -203,6 +190,19 @@ const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, userBalance }) => {
               {daysCount} {daysCount === 1 ? 'Day' : 'Days'}
             </span>
           </div>
+          {leaveType === 'Paid' && (
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 -mt-2">
+              Only working days are charged. Earned leave is credited on the 1st of each month
+              {userBalance?.earnedPerMonth !== undefined ? ` (${userBalance.earnedPerMonth} days)` : ''} and
+              unused days lapse at month end.
+            </p>
+          )}
+          {leaveType === 'WFH' && (
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 -mt-2">
+              These are still working days: once approved, punch in with "Work From Home" mode each day.
+              No leave balance is used and salary is not affected.
+            </p>
+          )}
 
           {/* Reason */}
           <div>

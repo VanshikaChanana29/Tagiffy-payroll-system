@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Users,
   Search,
@@ -16,6 +16,10 @@ import {
   FileSpreadsheet,
   Download,
   UploadCloud,
+  Clock,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
 } from 'lucide-react';
 import api from '../../api/client';
 import { downloadEmployeeTemplate, uploadEmployeeSheet } from '../../api/files';
@@ -26,6 +30,18 @@ import { useNavigate } from 'react-router-dom';
 import { useEmployeeInspection } from '../../context/EmployeeInspectionContext';
 import Tooltip from '../../components/common/Tooltip';
 import { useAuth } from '../../context/AuthContext';
+
+// Sortable table columns -> the value each one sorts by.
+const SORT_FIELDS = {
+  name: (emp) => emp.name,
+  employeeId: (emp) => emp.employeeId,
+  department: (emp) => emp.department,
+  status: (emp) => emp.status,
+};
+
+// "numeric" makes IDs sort naturally: SD033 < SD134 < SD150, EMP-9 < EMP-10.
+const compareText = (a, b) =>
+  (a || '').toString().localeCompare((b || '').toString(), undefined, { numeric: true, sensitivity: 'base' });
 
 const EmployeeDirectoryPage = () => {
   const navigate = useNavigate();
@@ -40,6 +56,8 @@ const EmployeeDirectoryPage = () => {
   const [search, setSearch] = useState('');
   const [selectedDept, setSelectedDept] = useState('All');
   const [selectedStatus, setSelectedStatus] = useState('All');
+  const [sortBy, setSortBy] = useState('employeeId');
+  const [sortDir, setSortDir] = useState('asc');
 
   // Modals state
   const [showAddModal, setShowAddModal] = useState(false);
@@ -71,6 +89,7 @@ const EmployeeDirectoryPage = () => {
     leaveBalance: { paid: 14, sick: 7, unpaid: 0 },
     address: { street: '', city: 'Bengaluru', state: 'Karnataka', zip: '' },
     emergencyContact: { name: '', relation: '', phone: '+91 ' },
+    attendanceExempt: false,
   });
 
   const toast = useToast();
@@ -172,6 +191,7 @@ const EmployeeDirectoryPage = () => {
           leaveBalance: { paid: 14, sick: 7, unpaid: 0 },
           address: { street: '', city: 'Bengaluru', state: 'Karnataka', zip: '' },
           emergencyContact: { name: '', relation: '', phone: '+91 ' },
+          attendanceExempt: false,
         });
         fetchEmployees();
       }
@@ -258,6 +278,45 @@ const EmployeeDirectoryPage = () => {
   };
 
   const activeCount = employees.filter((e) => e.status === 'Active').length;
+
+  const sortedEmployees = useMemo(() => {
+    const getValue = SORT_FIELDS[sortBy];
+    const direction = sortDir === 'asc' ? 1 : -1;
+    // Ties fall back to name so the order is stable and predictable.
+    return [...employees].sort(
+      (a, b) => direction * (compareText(getValue(a), getValue(b)) || compareText(a.name, b.name))
+    );
+  }, [employees, sortBy, sortDir]);
+
+  // Clicking the active column flips the direction; a new column starts ascending.
+  const handleSort = (field) => {
+    if (sortBy === field) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortBy(field);
+      setSortDir('asc');
+    }
+  };
+
+  const SortableHeader = ({ field, children }) => {
+    const active = sortBy === field;
+    const Icon = !active ? ArrowUpDown : sortDir === 'asc' ? ArrowUp : ArrowDown;
+    return (
+      <th className="px-6 py-4" aria-sort={active ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}>
+        <button
+          type="button"
+          onClick={() => handleSort(field)}
+          title={`Sort by ${children} (${active && sortDir === 'asc' ? 'descending' : 'ascending'})`}
+          className={`inline-flex items-center gap-1.5 uppercase tracking-wider font-semibold transition-colors hover:text-brand-600 dark:hover:text-brand-300 ${
+            active ? 'text-brand-600 dark:text-brand-300' : ''
+          }`}
+        >
+          {children}
+          <Icon className={`w-3.5 h-3.5 ${active ? '' : 'opacity-40'}`} />
+        </button>
+      </th>
+    );
+  };
 
   return (
     <div className="space-y-6">
@@ -398,16 +457,16 @@ const EmployeeDirectoryPage = () => {
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-100 dark:bg-slate-950/80 text-slate-600 dark:text-slate-400 uppercase tracking-wider font-semibold border-b border-slate-200 dark:border-slate-800">
                 <tr>
-                  <th className="px-6 py-4">Employee</th>
-                  <th className="px-6 py-4">ID & Role</th>
-                  <th className="px-6 py-4">Department</th>
-                  <th className="px-6 py-4">Status</th>
+                  <SortableHeader field="name">Employee</SortableHeader>
+                  <SortableHeader field="employeeId">ID & Role</SortableHeader>
+                  <SortableHeader field="department">Department</SortableHeader>
+                  <SortableHeader field="status">Status</SortableHeader>
                   <th className="px-6 py-4">Leave Balances</th>
                   <th className="px-6 py-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 dark:divide-slate-800/60">
-                {employees.map((emp) => (
+                {sortedEmployees.map((emp) => (
                   <tr
                     key={emp._id}
                     className="hover:bg-slate-50 dark:hover:bg-slate-850/50 transition-colors group"
@@ -450,6 +509,11 @@ const EmployeeDirectoryPage = () => {
                       >
                         {emp.role === 'super_admin' ? 'Super Admin' : emp.role}
                       </span>
+                      {emp.attendanceExempt && (
+                        <span className="inline-block mt-1 ml-1 text-[10px] font-bold px-2 py-0.5 rounded uppercase bg-slate-500/10 text-slate-600 dark:text-slate-300 border border-slate-500/25">
+                          No punch
+                        </span>
+                      )}
                     </td>
 
                     {/* Department & Designation */}
@@ -459,6 +523,15 @@ const EmployeeDirectoryPage = () => {
                       {emp.reportingManager?.name && (
                         <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">
                           Reports to {emp.reportingManager.name}
+                        </div>
+                      )}
+                      {emp.customShift?.shiftStart && emp.customShift?.shiftEnd && (
+                        <div
+                          className="inline-flex items-center gap-1 mt-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-700 dark:text-sky-300 border border-sky-500/25"
+                          title="Custom office timing (differs from the company default)"
+                        >
+                          <Clock className="w-3 h-3" />
+                          {emp.customShift.shiftStart}–{emp.customShift.shiftEnd}
                         </div>
                       )}
                     </td>
@@ -486,11 +559,12 @@ const EmployeeDirectoryPage = () => {
                     {/* Leave balance */}
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-2 text-slate-600 dark:text-slate-300">
-                        <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[11px]">
-                          Paid: <strong className="text-emerald-600 dark:text-emerald-400">{emp.leaveBalance?.paid || 0}</strong>
-                        </span>
-                        <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[11px]">
-                          Sick: <strong className="text-brand-600 dark:text-brand-400">{emp.leaveBalance?.sick || 0}</strong>
+                        <span
+                          className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[11px]"
+                          title="Earned leave left this month / credited this month"
+                        >
+                          Earned: <strong className="text-emerald-600 dark:text-emerald-400">{emp.leaveBalance?.paid ?? 0}</strong>
+                          <span className="text-slate-400"> / {emp.leaveBalance?.credit ?? 0}</span>
                         </span>
                       </div>
                     </td>
@@ -704,6 +778,25 @@ const EmployeeDirectoryPage = () => {
                   )}
                 </div>
 
+                <div className="sm:col-span-2">
+                  <label className="inline-flex items-start gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={!!newEmployee.attendanceExempt}
+                      onChange={(e) => setNewEmployee({ ...newEmployee, attendanceExempt: e.target.checked })}
+                      className="w-4 h-4 mt-0.5 accent-brand-600"
+                    />
+                    <span>
+                      <span className="block font-semibold text-slate-700 dark:text-slate-300">
+                        Punch in/out not required
+                      </span>
+                      <span className="block text-[10px] text-slate-400 mt-0.5">
+                        No punch option and no absences for this employee; HR enters their salary in each payroll run.
+                      </span>
+                    </span>
+                  </label>
+                </div>
+
               <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-200 dark:border-slate-800">
                 <button
                   type="button"
@@ -875,6 +968,25 @@ const EmployeeDirectoryPage = () => {
                     className="theme-input w-full"
                   />
                 </div>
+
+                <div className="sm:col-span-2">
+                  <label className="inline-flex items-start gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={!!selectedEmployee.attendanceExempt}
+                      onChange={(e) => setSelectedEmployee({ ...selectedEmployee, attendanceExempt: e.target.checked })}
+                      className="w-4 h-4 mt-0.5 accent-brand-600"
+                    />
+                    <span>
+                      <span className="block font-semibold text-slate-700 dark:text-slate-300">
+                        Punch in/out not required
+                      </span>
+                      <span className="block text-[10px] text-slate-400 mt-0.5">
+                        No punch option and no absences for this employee; HR enters their salary in each payroll run.
+                      </span>
+                    </span>
+                  </label>
+                </div>
               </div>
 
               <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-200 dark:border-slate-800">
@@ -964,23 +1076,21 @@ const EmployeeDirectoryPage = () => {
               {/* Leave Balances */}
               <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 flex items-center justify-between">
                 <div>
-                  <span className="text-slate-500 dark:text-slate-400 font-medium">Paid Leaves</span>
+                  <span className="text-slate-500 dark:text-slate-400 font-medium">Earned Left (this month)</span>
                   <div className="text-lg font-bold text-emerald-600 dark:text-emerald-400">
-                    {selectedEmployee.leaveBalance?.paid || 0} days
+                    {selectedEmployee.leaveBalance?.paid ?? 0} days
                   </div>
                 </div>
                 <div>
-                  <span className="text-slate-500 dark:text-slate-400 font-medium">Sick Leaves</span>
+                  <span className="text-slate-500 dark:text-slate-400 font-medium">Taken / Pending</span>
                   <div className="text-lg font-bold text-brand-600 dark:text-brand-400">
-                    {selectedEmployee.leaveBalance?.sick || 0} days
+                    {selectedEmployee.leaveBalance?.used ?? 0} / {selectedEmployee.leaveBalance?.pending ?? 0}
                   </div>
                 </div>
                 <div>
-                  <span className="text-slate-500 dark:text-slate-400 font-medium">Total Quota</span>
+                  <span className="text-slate-500 dark:text-slate-400 font-medium">Monthly Credit</span>
                   <div className="text-lg font-bold text-brand-600 dark:text-brand-400">
-                    {(selectedEmployee.leaveBalance?.paid || 0) +
-                      (selectedEmployee.leaveBalance?.sick || 0)}{' '}
-                    days
+                    {selectedEmployee.leaveBalance?.earnedPerMonth ?? 0} days
                   </div>
                 </div>
               </div>

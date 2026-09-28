@@ -36,6 +36,8 @@ const MonthAttendanceCalendar = ({ onAttendanceChange }) => {
   const [weeklyDays, setWeeklyDays] = useState([]);
   const [monthName, setMonthName] = useState('');
   const [stats, setStats] = useState(null);
+  // The office timing this person is judged against (personal, or the org shift).
+  const [shift, setShift] = useState(null);
   const [loading, setLoading] = useState(true);
 
   // Selected Day Modal State
@@ -55,6 +57,7 @@ const MonthAttendanceCalendar = ({ onAttendanceChange }) => {
         setMonthlyDays(monthRes.data.monthlyDays || []);
         setMonthName(monthRes.data.monthName || '');
         setStats(monthRes.data.stats || null);
+        setShift(monthRes.data.shift || null);
       }
 
       if (weekRes.data.success) {
@@ -143,6 +146,15 @@ const MonthAttendanceCalendar = ({ onAttendanceChange }) => {
           dot: 'bg-violet-400',
           text: 'text-violet-700 dark:text-violet-300',
         };
+      case 'Not Tracked':
+        // Attendance-exempt employee: no punch expected, so a neutral day, never Absent.
+        return {
+          bg: 'bg-slate-50 dark:bg-slate-900/40',
+          border: 'border-slate-200 dark:border-slate-800',
+          badgeBg: 'bg-slate-100 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400',
+          dot: 'bg-slate-400 dark:bg-slate-600',
+          text: 'text-slate-500 dark:text-slate-400',
+        };
       case 'Pre-joining':
         // Before the employee joined: not a working day for them, and never absent.
         return {
@@ -190,6 +202,16 @@ const MonthAttendanceCalendar = ({ onAttendanceChange }) => {
                 <p className="text-xs text-slate-500 dark:text-slate-400">
                   Full month schedule, logs, and status breakdown
                 </p>
+                {shift && (
+                  <p className="mt-1 inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                    <Clock className="w-3 h-3 text-brand-500" />
+                    Office timing: {shift.shiftStart} – {shift.shiftEnd}
+                    <span className="font-normal text-slate-400">
+                      ({shift.graceMinutes} min grace
+                      {shift.isCustomShift ? ', set for you by HR' : ''})
+                    </span>
+                  </p>
+                )}
               </div>
             </div>
           </div>
