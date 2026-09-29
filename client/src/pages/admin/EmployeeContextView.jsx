@@ -92,6 +92,11 @@ const EmployeeContextView = () => {
   const [assetForm, setAssetForm] = useState({ title: '', assetNumber: '', assetType: '' });
   const [assetSubmitting, setAssetSubmitting] = useState(false);
 
+  // Set / Revise CTC Modal
+  const [showCtcModal, setShowCtcModal] = useState(false);
+  const [ctcForm, setCtcForm] = useState({ annualCtc: '', note: '' });
+  const [ctcSubmitting, setCtcSubmitting] = useState(false);
+
   const fetchAllEmployeeData = async () => {
     if (!inspectedEmployee?._id) return;
     const empId = inspectedEmployee._id;
@@ -427,6 +432,45 @@ const EmployeeContextView = () => {
     }
   };
 
+  const openCtcModal = () => {
+    const current = Number(profileData?.salary?.annualCtc) || 0;
+    setCtcForm({ annualCtc: current > 0 ? String(current) : '', note: '' });
+    setShowCtcModal(true);
+  };
+
+  // A revision, not an edit: the server archives the outgoing CTC to salary
+  // history so payslips already issued stay explainable.
+  const handleCtcSubmit = async (e) => {
+    e.preventDefault();
+    if (!inspectedEmployee?._id) return;
+    const ctc = Number(ctcForm.annualCtc);
+    if (!ctc || ctc <= 0) {
+      toast.error('Please enter a positive annual CTC.');
+      return;
+    }
+
+    try {
+      setCtcSubmitting(true);
+      const res = await api.put(`/users/${inspectedEmployee._id}/salary`, {
+        annualCtc: ctc,
+        note: ctcForm.note.trim(),
+      });
+      if (res.data.success) {
+        toast.success(res.data.message || 'CTC saved');
+        setProfileData((prev) => ({
+          ...prev,
+          salary: res.data.salary,
+          salaryHistory: res.data.salaryHistory,
+        }));
+        setShowCtcModal(false);
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to save CTC');
+    } finally {
+      setCtcSubmitting(false);
+    }
+  };
+
   const handleDeleteAsset = async (assetId) => {
     if (!inspectedEmployee?._id) return;
     if (!window.confirm('Remove this asset from the employee\'s record?')) return;
@@ -623,6 +667,22 @@ const EmployeeContextView = () => {
                   ? `Latest payslip: ₹${(salaryData.latest.netSalary || 0).toLocaleString('en-IN')} · ${salaryData.latest.paymentStatus}`
                   : 'No payslip yet'}
               </p>
+              <button
+                type="button"
+                onClick={openCtcModal}
+                disabled={!profileData}
+                className="inline-flex items-center gap-1 text-xs font-semibold text-brand-600 dark:text-brand-400 hover:underline disabled:opacity-50"
+              >
+                {annualCtc > 0 ? (
+                  <>
+                    <Edit2 className="w-3 h-3" /> Revise CTC
+                  </>
+                ) : (
+                  <>
+                    <Plus className="w-3 h-3" /> Add CTC
+                  </>
+                )}
+              </button>
             </div>
 
             {/* Metric 4: Documents in Dossier */}
@@ -2098,6 +2158,99 @@ const EmployeeContextView = () => {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* SET / REVISE CTC MODAL */}
+      {showCtcModal && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 max-w-md w-full shadow-soft space-y-4">
+            <div className="flex items-center justify-between">
+              <h4 className="text-base font-bold text-slate-900 dark:text-white">
+                {annualCtc > 0 ? `Revise CTC for ${emp.name}` : `Add CTC for ${emp.name}`}
+              </h4>
+              <Tooltip label="Close" side="left">
+                <button aria-label="Close"
+                  type="button"
+                  onClick={() => setShowCtcModal(false)}
+                  className="p-1 rounded-lg text-slate-400 hover:text-white"
+                >
+                  <XCircle className="w-5 h-5" />
+                </button>
+              </Tooltip>
+            </div>
+
+            <form onSubmit={handleCtcSubmit} className="space-y-3.5 text-xs">
+              {annualCtc > 0 && (
+                <p className="text-slate-500 dark:text-slate-400">
+                  Current CTC: <span className="font-semibold text-slate-700 dark:text-slate-300">{inr(annualCtc)}</span>{' '}
+                  ({inr(annualCtc / 12)}/month). It will be kept in salary history.
+                </p>
+              )}
+
+              <div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Annual CTC (₹) *
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  required
+                  autoFocus
+                  value={ctcForm.annualCtc}
+                  onChange={(e) => setCtcForm({ ...ctcForm, annualCtc: e.target.value })}
+                  placeholder="e.g. 1200000"
+                  className="theme-input w-full"
+                />
+                {Number(ctcForm.annualCtc) > 0 && (
+                  <div className="mt-2 p-3 rounded-xl bg-emerald-500/5 border border-emerald-500/25 flex items-center gap-2.5 flex-wrap">
+                    <span className="text-[11px] text-slate-600 dark:text-slate-400">
+                      {inr(ctcForm.annualCtc)} ÷ 12 =
+                    </span>
+                    <span className="text-sm font-black text-emerald-700 dark:text-emerald-300">
+                      {inr(Number(ctcForm.annualCtc) / 12)}
+                    </span>
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400">per month</span>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Note
+                </label>
+                <input
+                  type="text"
+                  value={ctcForm.note}
+                  onChange={(e) => setCtcForm({ ...ctcForm, note: e.target.value })}
+                  placeholder="e.g. Annual appraisal 2026"
+                  className="theme-input w-full"
+                />
+              </div>
+
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                Takes effect from today. Payslips already generated are not changed; the next payroll run uses the new amount.
+              </p>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowCtcModal(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={ctcSubmitting}
+                  className="px-4 py-2 rounded-xl bg-brand-600 text-white font-bold hover:bg-brand-500 disabled:opacity-50"
+                >
+                  {ctcSubmitting ? 'Saving...' : 'Save CTC'}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>
