@@ -49,6 +49,8 @@ import Tooltip from '../../components/common/Tooltip';
 import BankDetailsCard from '../../components/profile/BankDetailsCard';
 import { formatHours } from '../../utils/formatHours';
 
+const inr = (n) => '₹' + Math.round(Number(n) || 0).toLocaleString('en-IN');
+
 const EmployeeContextView = () => {
   const {
     inspectedEmployee,
@@ -230,7 +232,7 @@ const EmployeeContextView = () => {
           id: `doc-${doc._id}`,
           type: 'document',
           title: `Compliance File: ${doc.name}`,
-          description: `${doc.type} (${doc.fileSize || '1.5 MB'})`,
+          description: doc.fileSize ? `${doc.type} (${doc.fileSize})` : doc.type,
           timestamp: new Date(doc.uploadedAt || Date.now()),
           status: doc.status || 'Verified',
         });
@@ -473,6 +475,7 @@ const EmployeeContextView = () => {
   }
 
   const emp = profileData || inspectedEmployee;
+  const annualCtc = Number(emp?.salary?.annualCtc) || 0;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
@@ -600,17 +603,25 @@ const EmployeeContextView = () => {
             <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                  Latest Net Pay
+                  Monthly Salary
                 </span>
                 <div className="w-8 h-8 rounded-xl bg-brand-500/15 text-brand-600 dark:text-brand-400 flex items-center justify-center">
                   <DollarSign className="w-4 h-4" />
                 </div>
               </div>
+              {/* Pay is annual CTC / 12. No CTC on record means no figure, not a placeholder. */}
               <div className="text-xl font-black text-slate-900 dark:text-white">
-                ₹{salaryData.latest?.netSalary?.toLocaleString('en-IN') || '1,04,000'}
+                {annualCtc > 0 ? `₹${Math.round(annualCtc / 12).toLocaleString('en-IN')}` : '-'}
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Status: {salaryData.latest?.paymentStatus || 'Paid'}
+                {annualCtc > 0
+                  ? `CTC ₹${annualCtc.toLocaleString('en-IN')} ÷ 12`
+                  : 'No CTC on record'}
+              </p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                {salaryData.latest
+                  ? `Latest payslip: ₹${(salaryData.latest.netSalary || 0).toLocaleString('en-IN')} · ${salaryData.latest.paymentStatus}`
+                  : 'No payslip yet'}
               </p>
             </div>
 
@@ -1481,7 +1492,7 @@ const EmployeeContextView = () => {
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs">
-                    {/* Earnings */}
+                    {/* Earnings — same fields the employee's own payslip reads */}
                     <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2.5">
                       <h5 className="font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider text-[11px]">
                         Earnings
@@ -1489,56 +1500,88 @@ const EmployeeContextView = () => {
                       <div className="flex justify-between py-1 border-b border-slate-200/60 dark:border-slate-800">
                         <span className="text-slate-500">Basic Salary</span>
                         <span className="font-bold text-slate-900 dark:text-white">
-                          ₹{selectedPayslip.basic?.toLocaleString('en-IN') || '60,000'}
+                          {inr(selectedPayslip.basicSalary)}
                         </span>
                       </div>
-                      <div className="flex justify-between py-1 border-b border-slate-200/60 dark:border-slate-800">
-                        <span className="text-slate-500">House Rent Allowance (HRA)</span>
-                        <span className="font-bold text-slate-900 dark:text-white">
-                          ₹{selectedPayslip.hra?.toLocaleString('en-IN') || '25,000'}
-                        </span>
-                      </div>
-                      <div className="flex justify-between py-1 border-b border-slate-200/60 dark:border-slate-800">
-                        <span className="text-slate-500">Special / Other Allowances</span>
-                        <span className="font-bold text-slate-900 dark:text-white">
-                          ₹{selectedPayslip.allowances?.toLocaleString('en-IN') || '25,000'}
-                        </span>
-                      </div>
+                      {(selectedPayslip.hra || 0) > 0 && (
+                        <div className="flex justify-between py-1 border-b border-slate-200/60 dark:border-slate-800">
+                          <span className="text-slate-500">House Rent Allowance (HRA)</span>
+                          <span className="font-bold text-slate-900 dark:text-white">
+                            {inr(selectedPayslip.hra)}
+                          </span>
+                        </div>
+                      )}
+                      {(selectedPayslip.allowances || 0) > 0 && (
+                        <div className="flex justify-between py-1 border-b border-slate-200/60 dark:border-slate-800">
+                          <span className="text-slate-500">Special / Other Allowances</span>
+                          <span className="font-bold text-slate-900 dark:text-white">
+                            {inr(selectedPayslip.allowances)}
+                          </span>
+                        </div>
+                      )}
+                      {(selectedPayslip.incentive || 0) > 0 && (
+                        <div className="flex justify-between py-1 border-b border-slate-200/60 dark:border-slate-800">
+                          <span className="text-slate-500">Incentive</span>
+                          <span className="font-bold text-slate-900 dark:text-white">
+                            {inr(selectedPayslip.incentive)}
+                          </span>
+                        </div>
+                      )}
                       <div className="flex justify-between pt-2 text-sm font-black text-slate-900 dark:text-white">
                         <span>Gross Earnings</span>
                         <span className="text-emerald-600 dark:text-emerald-400">
-                          ₹{selectedPayslip.grossEarnings?.toLocaleString('en-IN') || '1,10,000'}
+                          {inr(selectedPayslip.grossSalary)}
                         </span>
                       </div>
                     </div>
 
-                    {/* Deductions */}
+                    {/* Deductions — PF and TDS only appear on older payslips that carry them */}
                     <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2.5">
                       <h5 className="font-bold text-rose-600 dark:text-rose-400 uppercase tracking-wider text-[11px]">
                         Deductions
                       </h5>
-                      <div className="flex justify-between py-1 border-b border-slate-200/60 dark:border-slate-800">
-                        <span className="text-slate-500">Provident Fund (PF)</span>
-                        <span className="font-bold text-slate-900 dark:text-white">
-                          ₹{selectedPayslip.pf?.toLocaleString('en-IN') || '3,600'}
-                        </span>
-                      </div>
-                      <div className="flex justify-between py-1 border-b border-slate-200/60 dark:border-slate-800">
-                        <span className="text-slate-500">Professional Tax</span>
-                        <span className="font-bold text-slate-900 dark:text-white">
-                          ₹{selectedPayslip.tax?.toLocaleString('en-IN') || '2,400'}
-                        </span>
-                      </div>
+                      {(selectedPayslip.deductions?.pf || 0) > 0 && (
+                        <div className="flex justify-between py-1 border-b border-slate-200/60 dark:border-slate-800">
+                          <span className="text-slate-500">Provident Fund (PF)</span>
+                          <span className="font-bold text-slate-900 dark:text-white">
+                            {inr(selectedPayslip.deductions?.pf)}
+                          </span>
+                        </div>
+                      )}
+                      {(selectedPayslip.deductions?.tax || 0) > 0 && (
+                        <div className="flex justify-between py-1 border-b border-slate-200/60 dark:border-slate-800">
+                          <span className="text-slate-500">Income Tax (TDS)</span>
+                          <span className="font-bold text-slate-900 dark:text-white">
+                            {inr(selectedPayslip.deductions?.tax)}
+                          </span>
+                        </div>
+                      )}
                       <div className="flex justify-between py-1 border-b border-slate-200/60 dark:border-slate-800">
                         <span className="text-slate-500">Unpaid Leave Deductions</span>
                         <span className="font-bold text-slate-900 dark:text-white">
-                          ₹{selectedPayslip.unpaidLeaveDeduction?.toLocaleString('en-IN') || '0'}
+                          {inr(selectedPayslip.deductions?.unpaidLeaveDeduction)}
                         </span>
                       </div>
+                      {(selectedPayslip.deductions?.advance || 0) > 0 && (
+                        <div className="flex justify-between py-1 border-b border-slate-200/60 dark:border-slate-800">
+                          <span className="text-slate-500">Salary Advance Recovery</span>
+                          <span className="font-bold text-slate-900 dark:text-white">
+                            {inr(selectedPayslip.deductions?.advance)}
+                          </span>
+                        </div>
+                      )}
+                      {(selectedPayslip.deductions?.other || 0) > 0 && (
+                        <div className="flex justify-between py-1 border-b border-slate-200/60 dark:border-slate-800">
+                          <span className="text-slate-500">Other Deductions</span>
+                          <span className="font-bold text-slate-900 dark:text-white">
+                            {inr(selectedPayslip.deductions?.other)}
+                          </span>
+                        </div>
+                      )}
                       <div className="flex justify-between pt-2 text-sm font-black text-slate-900 dark:text-white">
                         <span>Total Deductions</span>
                         <span className="text-rose-600 dark:text-rose-400">
-                          ₹{selectedPayslip.totalDeductions?.toLocaleString('en-IN') || '6,000'}
+                          {inr((selectedPayslip.grossSalary || 0) - (selectedPayslip.netSalary || 0))}
                         </span>
                       </div>
                     </div>
