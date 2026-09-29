@@ -1,4 +1,52 @@
 const Notification = require('../models/Notification');
+const User = require('../models/User');
+const Leave = require('../models/Leave');
+const Attendance = require('../models/Attendance');
+const AttendanceRequest = require('../models/AttendanceRequest');
+const Reimbursement = require('../models/Reimbursement');
+
+// Records that belong to one employee through a userId field.
+const OWNED_KINDS = { Leave, Attendance, AttendanceRequest, Reimbursement };
+const SUBJECT_FIELDS = 'name email employeeId department designation avatar role status';
+
+// Works out which employee each notification is about, so clicking it can open
+// that person's record. Resolved at read time from relatedEntity, so it also
+// covers notifications created before this existed.
+const attachSubjects = async (notifications) => {
+  const idsByKind = {};
+  for (const n of notifications) {
+    const { kind, id } = n.relatedEntity || {};
+    if (kind && id) (idsByKind[kind] ||= []).push(id);
+  }
+
+  const userIdByEntity = new Map();
+  await Promise.all(
+    Object.entries(idsByKind).map(async ([kind, ids]) => {
+      if (kind === 'User') {
+        ids.forEach((id) => userIdByEntity.set(id.toString(), id.toString()));
+      } else if (kind === 'UserDocument') {
+        // Documents live inside the employee's own record.
+        const owners = await User.find({ 'documents._id': { $in: ids } }).select('documents._id');
+        for (const owner of owners) {
+          for (const doc of owner.documents) userIdByEntity.set(doc._id.toString(), owner._id.toString());
+        }
+      } else if (OWNED_KINDS[kind]) {
+        const records = await OWNED_KINDS[kind].find({ _id: { $in: ids } }).select('userId');
+        records.forEach((r) => r.userId && userIdByEntity.set(r._id.toString(), r.userId.toString()));
+      }
+    })
+  );
+
+  const subjects = await User.find({ _id: { $in: [...new Set(userIdByEntity.values())] } }).select(SUBJECT_FIELDS);
+  const subjectById = new Map(subjects.map((u) => [u._id.toString(), u]));
+
+  return notifications.map((n) => {
+    const obj = n.toJSON();
+    const entityId = n.relatedEntity?.id?.toString();
+    obj.subject = (entityId && subjectById.get(userIdByEntity.get(entityId))) || null;
+    return obj;
+  });
+};
 
 // @desc    Get current user's notifications, newest first
 // @route   GET /api/notifications
@@ -18,7 +66,7 @@ const getMyNotifications = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      data: notifications,
+      data: await attachSubjects(notifications),
       pagination: { page, limit, total, pages: Math.ceil(total / limit) },
     });
   } catch (error) {

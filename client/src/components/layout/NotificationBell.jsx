@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Bell, CheckCheck, CalendarClock, MapPinOff, FileText, Wallet, ClipboardCheck, Clock, Home, Landmark } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Bell, CheckCheck, CalendarClock, MapPinOff, FileText, Wallet, ClipboardCheck, Clock, Home, Landmark, Receipt, ChevronRight } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { useNotifications } from '../../context/NotificationContext';
+import { useAuth } from '../../context/AuthContext';
+import { useEmployeeInspection } from '../../context/EmployeeInspectionContext';
 import Tooltip from '../common/Tooltip';
 
 const ICONS_BY_TYPE = {
@@ -24,6 +27,36 @@ const ICONS_BY_TYPE = {
   bank_details_correction_rejected: Landmark,
   bank_details_updated_by_hr: Landmark,
   payslip_generated: Wallet,
+  reimbursement_submitted: Receipt,
+  reimbursement_approved: Receipt,
+  reimbursement_rejected: Receipt,
+  reimbursement_cancelled: Receipt,
+};
+
+// Which area a notification is about, from its type prefix.
+const areaOf = (type = '') => {
+  if (type.startsWith('leave_')) return 'leaves';
+  if (type.startsWith('regularization_') || type.startsWith('attendance_')) return 'attendance';
+  if (type.startsWith('document_')) return 'documents';
+  if (type.startsWith('bank_details_')) return 'profile';
+  if (type.startsWith('reimbursement_')) return 'reimbursements';
+  if (type.startsWith('payslip_')) return 'payroll';
+  return null;
+};
+
+// The viewer's own page for each area.
+const OWN_PAGES = {
+  leaves: '/employee/leaves',
+  attendance: '/employee/attendance',
+  reimbursements: '/employee/reimbursements',
+  payroll: '/employee/salary',
+};
+
+// A manager's team screens; anything else opens their team list.
+const TEAM_PAGES = {
+  leaves: '/team/leaves',
+  attendance: '/team/attendance',
+  reimbursements: '/team/reimbursements',
 };
 
 const NotificationBell = () => {
@@ -31,6 +64,39 @@ const NotificationBell = () => {
   const dropdownRef = useRef(null);
   const { notifications, unreadCount, refreshNotifications, markAsRead, markAllAsRead } =
     useNotifications();
+  const navigate = useNavigate();
+  const { user, isAdmin } = useAuth();
+  const { selectEmployee } = useEmployeeInspection();
+  const myId = user?._id || user?.id;
+
+  // Where a click takes you: HR opens the employee's record on the matching tab,
+  // a manager opens their team screen, and your own items open your own pages.
+  const destinationOf = (n) => {
+    const area = areaOf(n.type);
+    const subject = n.subject;
+    const aboutSomeoneElse = subject && subject._id !== myId;
+
+    if (aboutSomeoneElse && isAdmin) {
+      if (area === 'reimbursements') return { path: '/admin/reimbursements' };
+      return { path: '/admin/employee-view', subject, tab: area || 'dashboard' };
+    }
+    if (aboutSomeoneElse && user?.role === 'manager') {
+      return { path: TEAM_PAGES[area] || '/team' };
+    }
+    if (area === 'documents' || area === 'profile') {
+      return { path: isAdmin ? '/admin/profile' : '/employee/profile' };
+    }
+    return OWN_PAGES[area] ? { path: OWN_PAGES[area] } : null;
+  };
+
+  const handleNotificationClick = (n) => {
+    if (!n.isRead) markAsRead(n._id);
+    const dest = destinationOf(n);
+    if (!dest) return;
+    if (dest.subject) selectEmployee(dest.subject, dest.tab);
+    setIsOpen(false);
+    navigate(dest.path);
+  };
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -93,12 +159,13 @@ const NotificationBell = () => {
             ) : (
               notifications.map((n) => {
                 const Icon = ICONS_BY_TYPE[n.type] || Bell;
+                const dest = destinationOf(n);
                 return (
                   <button
                     key={n._id}
                     type="button"
-                    onClick={() => !n.isRead && markAsRead(n._id)}
-                    className={`w-full text-left px-3.5 py-3 flex items-start gap-2.5 border-b border-slate-100 dark:border-slate-800/70 last:border-0 transition-colors ${
+                    onClick={() => handleNotificationClick(n)}
+                    className={`group w-full text-left px-3.5 py-3 flex items-start gap-2.5 border-b border-slate-100 dark:border-slate-800/70 last:border-0 transition-colors ${
                       n.isRead
                         ? 'hover:bg-slate-50 dark:hover:bg-slate-800/40'
                         : 'bg-brand-50/60 dark:bg-brand-950/30 hover:bg-brand-50 dark:hover:bg-brand-950/50'
@@ -129,6 +196,9 @@ const NotificationBell = () => {
                         {formatDistanceToNow(new Date(n.createdAt), { addSuffix: true })}
                       </span>
                     </div>
+                    {dest && (
+                      <ChevronRight className="w-4 h-4 shrink-0 self-center text-slate-300 dark:text-slate-600 group-hover:text-brand-500 transition-colors" />
+                    )}
                   </button>
                 );
               })
