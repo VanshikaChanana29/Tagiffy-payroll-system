@@ -201,7 +201,7 @@ const EmployeeContextView = () => {
             id: `att-in-${att._id || att.date}`,
             type: 'attendance',
             title: 'Attendance Punch In',
-            description: `Checked in at ${isNaN(dt.getTime()) ? '09:15 AM' : format(dt, 'hh:mm a')} (${att.workMode || 'Office'} mode)`,
+            description: `Checked in${isNaN(dt.getTime()) ? '' : ` at ${format(dt, 'hh:mm a')}`} (${att.workMode || 'Office'} mode)`,
             timestamp: isNaN(dt.getTime()) ? new Date() : dt,
             status: att.status || 'Present',
           });
@@ -617,12 +617,12 @@ const EmployeeContextView = () => {
                 </div>
               </div>
               <div className="text-xl font-black text-slate-900 dark:text-white">
-                {attendanceData.today?.status || 'Present'}
+                {attendanceData.today?.status || 'Not Checked In'}
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400">
                 {attendanceData.today?.checkIn
                   ? `In: ${format(new Date(attendanceData.today.checkIn), 'hh:mm a')}`
-                  : 'Punched In at 09:15 AM'}
+                  : 'No punch recorded today'}
               </p>
             </div>
 

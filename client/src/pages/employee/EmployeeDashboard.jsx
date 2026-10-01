@@ -88,7 +88,7 @@ const EmployeeDashboard = () => {
             id: `att-in-${att._id || att.date}`,
             type: 'attendance',
             title: 'Daily Attendance Punch In',
-            description: `Checked in at ${isNaN(checkInDate.getTime()) ? '09:15 AM' : format(checkInDate, 'hh:mm a')} • ${att.workMode || 'Office'} mode`,
+            description: `Checked in${isNaN(checkInDate.getTime()) ? '' : ` at ${format(checkInDate, 'hh:mm a')}`} • ${att.workMode || 'Office'} mode`,
             timestamp: isNaN(checkInDate.getTime()) ? new Date() : checkInDate,
             status: att.status || 'Present',
             statusColor: 'emerald',
@@ -100,7 +100,7 @@ const EmployeeDashboard = () => {
             id: `att-out-${att._id || att.date}`,
             type: 'attendance',
             title: 'Shift Completed & Punch Out',
-            description: `Checked out at ${isNaN(checkOutDate.getTime()) ? '05:45 PM' : format(checkOutDate, 'hh:mm a')} • ${formatHours(att.totalHours)} logged`,
+            description: `Checked out${isNaN(checkOutDate.getTime()) ? '' : ` at ${format(checkOutDate, 'hh:mm a')}`} • ${formatHours(att.totalHours)} logged`,
             timestamp: isNaN(checkOutDate.getTime()) ? new Date() : checkOutDate,
             status: 'Completed',
             statusColor: 'brand',
@@ -142,11 +142,13 @@ const EmployeeDashboard = () => {
       // C. Salary & Compensation Payslips
       payslipsList.slice(0, 2).forEach((sal) => {
         const salDate = sal.disbursementDate ? new Date(sal.disbursementDate) : (sal.createdAt ? new Date(sal.createdAt) : new Date());
-        const monthName = sal.month ? `Month ${sal.month}` : 'August';
+        const period = sal.month && sal.year
+          ? new Date(sal.year, sal.month - 1).toLocaleString('en-IN', { month: 'long', year: 'numeric' })
+          : null;
         rawActivities.push({
           id: `sal-${sal._id}`,
           type: 'salary',
-          title: `Monthly Payslip Issued (${monthName} ${sal.year || 2026})`,
+          title: period ? `Monthly Payslip Issued (${period})` : 'Monthly Payslip Issued',
           description: 'Payslip available under My Payslips',
           timestamp: isNaN(salDate.getTime()) ? new Date() : salDate,
           status: sal.paymentStatus || 'Paid',
@@ -267,7 +269,7 @@ const EmployeeDashboard = () => {
               Days Present (30d)
             </span>
             <div className="text-2xl font-black text-brand-600 dark:text-brand-400 mt-1">
-              {attendanceStats?.presentCount || (attendanceStats?.totalRecords ? attendanceStats.totalRecords : 5)}{' '}
+              {attendanceStats?.presentCount ?? attendanceStats?.totalRecords ?? 0}{' '}
               <span className="text-xs font-normal text-slate-500 dark:text-slate-400">days</span>
             </div>
             <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 block">
