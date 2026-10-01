@@ -6,6 +6,10 @@ const connectDB = require('./config/db');
 // Load environment variables
 dotenv.config();
 
+// All attendance/payroll date logic uses server-local time; pin it to IST so
+// hosts running in UTC don't shift punch times and "today" by 5:30 hours.
+process.env.TZ = process.env.TZ || 'Asia/Kolkata';
+
 const app = express();
 const PORT = process.env.PORT || 5000;
 
