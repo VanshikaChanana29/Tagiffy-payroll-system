@@ -33,6 +33,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import BankDetailsCard from '../components/profile/BankDetailsCard';
+import SalaryCard from '../components/profile/SalaryCard';
 import api from '../api/client';
 import {
   uploadDocument,
@@ -816,6 +817,8 @@ const ProfilePage = () => {
           </div>
         )}
       </form>
+
+      <SalaryCard salary={user?.salary} />
 
       {(user?._id || user?.id) && <BankDetailsCard employeeId={user._id || user.id} mode="self" />}
 

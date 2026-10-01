@@ -33,7 +33,6 @@ const EmployeeDashboard = () => {
   const { user } = useAuth();
   const [attendanceStats, setAttendanceStats] = useState(null);
   const [weeklyHistory, setWeeklyHistory] = useState([]);
-  const [latestPayslip, setLatestPayslip] = useState(null);
   const [pendingLeavesCount, setPendingLeavesCount] = useState(0);
   const [recentActivities, setRecentActivities] = useState([]);
   const [loadingDashboard, setLoadingDashboard] = useState(true);
@@ -67,12 +66,8 @@ const EmployeeDashboard = () => {
       const weekDays = weekData.weeklyDays || weekData.days || [];
       setWeeklyHistory(weekDays);
 
-      // 3. Latest Payslip
+      // 3. Payslips (activity feed only — salary figures live on the profile)
       const payslipsList = payData.payslips || payData.salaries || [];
-      const latestPay = payData.latest || (payslipsList.length > 0 ? payslipsList[0] : null);
-      if (latestPay) {
-        setLatestPayslip(latestPay);
-      }
 
       // 4. Pending Leaves Count
       if (leavesData.stats) {
@@ -152,7 +147,7 @@ const EmployeeDashboard = () => {
           id: `sal-${sal._id}`,
           type: 'salary',
           title: `Monthly Payslip Issued (${monthName} ${sal.year || 2026})`,
-          description: `Net Take-Home Pay ₹${(sal.netSalary || 0).toLocaleString('en-IN')} credited via Direct Deposit`,
+          description: 'Payslip available under My Payslips',
           timestamp: isNaN(salDate.getTime()) ? new Date() : salDate,
           status: sal.paymentStatus || 'Paid',
           statusColor: 'emerald',
@@ -246,7 +241,7 @@ const EmployeeDashboard = () => {
       </div>
 
       {/* KPI Overview Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {/* Available Leaves */}
         <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex items-center justify-between transition-colors">
           <div>
@@ -281,44 +276,6 @@ const EmployeeDashboard = () => {
           </div>
           <div className="w-10 h-10 rounded-xl bg-brand-500/10 text-brand-600 dark:text-brand-400 flex items-center justify-center">
             <Clock className="w-5 h-5" />
-          </div>
-        </div>
-
-        {/* Latest Take-Home Pay */}
-        <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex items-center justify-between transition-colors">
-          <div>
-            <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider">
-              Take-Home Pay (INR)
-            </span>
-            <div className="text-2xl font-black text-slate-900 dark:text-white mt-1">
-              {latestPayslip
-                ? `₹${(latestPayslip.netSalary || 0).toLocaleString('en-IN')}`
-                : '—'}
-            </div>
-            {/* Never invent a salary figure: without a payslip, say so. */}
-            {latestPayslip ? (
-              <span
-                className={`text-[11px] mt-0.5 flex items-center gap-1 ${
-                  latestPayslip.paymentStatus === 'Paid'
-                    ? 'text-emerald-600 dark:text-emerald-400'
-                    : 'text-amber-600 dark:text-amber-400'
-                }`}
-              >
-                <CheckCircle2 className="w-3 h-3" />
-                {latestPayslip.paymentStatus === 'Paid' ? 'Disbursed' : 'Pending'} •{' '}
-                {new Date(latestPayslip.year, latestPayslip.month - 1).toLocaleString('en-IN', {
-                  month: 'long',
-                  year: 'numeric',
-                })}
-              </span>
-            ) : (
-              <span className="text-[11px] text-slate-400 mt-0.5 block">
-                No payslip issued yet
-              </span>
-            )}
-          </div>
-          <div className="w-10 h-10 rounded-xl bg-brand-500/10 text-brand-600 dark:text-brand-400 flex items-center justify-center">
-            <DollarSign className="w-5 h-5" />
           </div>
         </div>
 

@@ -47,6 +47,7 @@ import { format } from 'date-fns';
 import { TaggifyIcon } from '../../components/common/TaggifyLogo';
 import Tooltip from '../../components/common/Tooltip';
 import BankDetailsCard from '../../components/profile/BankDetailsCard';
+import SalaryCard from '../../components/profile/SalaryCard';
 import { formatHours } from '../../utils/formatHours';
 
 const inr = (n) => '₹' + Math.round(Number(n) || 0).toLocaleString('en-IN');
@@ -604,7 +605,7 @@ const EmployeeContextView = () => {
       {activeTab === 'dashboard' && (
         <div className="space-y-6">
           {/* Quick Metrics Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {/* Metric 1: Today Attendance */}
             <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-2">
               <div className="flex items-center justify-between">
@@ -641,48 +642,6 @@ const EmployeeContextView = () => {
               <p className="text-xs text-slate-500 dark:text-slate-400">
                 {leaveData.balance?.credit ?? 0} credited this month · lapses at month end
               </p>
-            </div>
-
-            {/* Metric 3: Latest Net Salary */}
-            <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                  Monthly Salary
-                </span>
-                <div className="w-8 h-8 rounded-xl bg-brand-500/15 text-brand-600 dark:text-brand-400 flex items-center justify-center">
-                  <DollarSign className="w-4 h-4" />
-                </div>
-              </div>
-              {/* Pay is annual CTC / 12. No CTC on record means no figure, not a placeholder. */}
-              <div className="text-xl font-black text-slate-900 dark:text-white">
-                {annualCtc > 0 ? `₹${Math.round(annualCtc / 12).toLocaleString('en-IN')}` : '-'}
-              </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                {annualCtc > 0
-                  ? `CTC ₹${annualCtc.toLocaleString('en-IN')} ÷ 12`
-                  : 'No CTC on record'}
-              </p>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                {salaryData.latest
-                  ? `Latest payslip: ₹${(salaryData.latest.netSalary || 0).toLocaleString('en-IN')} · ${salaryData.latest.paymentStatus}`
-                  : 'No payslip yet'}
-              </p>
-              <button
-                type="button"
-                onClick={openCtcModal}
-                disabled={!profileData}
-                className="inline-flex items-center gap-1 text-xs font-semibold text-brand-600 dark:text-brand-400 hover:underline disabled:opacity-50"
-              >
-                {annualCtc > 0 ? (
-                  <>
-                    <Edit2 className="w-3 h-3" /> Revise CTC
-                  </>
-                ) : (
-                  <>
-                    <Plus className="w-3 h-3" /> Add CTC
-                  </>
-                )}
-              </button>
             </div>
 
             {/* Metric 4: Documents in Dossier */}
@@ -1267,6 +1226,8 @@ const EmployeeContextView = () => {
               </div>
             </div>
           </form>
+
+          <SalaryCard salary={emp?.salary} onEditCtc={openCtcModal} editDisabled={!profileData} />
 
           {inspectedEmployee?._id && <BankDetailsCard employeeId={inspectedEmployee._id} mode="hr" />}
         </div>
