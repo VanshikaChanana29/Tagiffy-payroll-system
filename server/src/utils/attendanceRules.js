@@ -46,11 +46,16 @@ const calculateLateMinutes = (checkIn, settings) => {
   return Math.max(0, minutesSinceMidnight(new Date(checkIn)) - allowedStart);
 };
 
-/** Minutes left before the shift ended. 0 when they stayed to the end. */
+/**
+ * Minutes left before the shift ended. 0 when they stayed to the end or left
+ * within the grace period, which forgives leaving early the same way it
+ * forgives arriving late.
+ */
 const calculateEarlyMinutes = (checkOut, settings) => {
   if (!checkOut) return 0;
   const shiftEnd = parseTimeToMinutes(settings.shiftEnd, 1110);
-  return Math.max(0, shiftEnd - minutesSinceMidnight(new Date(checkOut)));
+  const earlyMinutes = Math.max(0, shiftEnd - minutesSinceMidnight(new Date(checkOut)));
+  return earlyMinutes > (settings.graceMinutes || 0) ? earlyMinutes : 0;
 };
 
 /** Hours worked beyond the overtime threshold, rounded to 2 decimals. */
@@ -59,12 +64,20 @@ const calculateOvertimeHours = (totalHours, settings) => {
   return Math.max(0, Number((totalHours - threshold).toFixed(2)));
 };
 
-/** Present / Half-day / Absent from hours worked. */
+/**
+ * Present / Half-day / Absent from hours worked. Falling short of a full day
+ * by no more than the grace period still counts as Present, so someone who
+ * only used up their grace is not marked Half-day.
+ */
 const resolveStatus = (totalHours, settings) => {
-  const fullDay = Number(settings.fullDayHours) || 8;
-  const halfDay = Number(settings.halfDayHours) || 4;
-  if (totalHours >= fullDay) return 'Present';
-  if (totalHours >= halfDay) return 'Half-day';
+  const fullDayMinutes = (Number(settings.fullDayHours) || 8) * 60;
+  const halfDayMinutes = (Number(settings.halfDayHours) || 4) * 60;
+  const graceMinutes = Number(settings.graceMinutes) || 0;
+  // Compare whole minutes: totalHours is rounded to 2 decimals.
+  const workedMinutes = Math.round((Number(totalHours) || 0) * 60);
+
+  if (workedMinutes >= Math.max(halfDayMinutes, fullDayMinutes - graceMinutes)) return 'Present';
+  if (workedMinutes >= halfDayMinutes) return 'Half-day';
   return 'Absent';
 };
 

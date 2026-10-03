@@ -150,7 +150,8 @@ const ShiftSettingsPanel = () => {
               className={field}
             />
             <p className="text-[10px] text-slate-400 mt-1">
-              Late only after {settings.shiftStart} + {settings.graceMinutes} min
+              Late only after {settings.shiftStart} + {settings.graceMinutes} min; early exit
+              only before {settings.shiftEnd} − {settings.graceMinutes} min
             </p>
           </div>
         </div>
@@ -166,6 +167,9 @@ const ShiftSettingsPanel = () => {
               onChange={(e) => setSettings({ ...settings, fullDayHours: e.target.value })}
               className={field}
             />
+            <p className="text-[10px] text-slate-400 mt-1">
+              Short by up to {settings.graceMinutes} min still counts as full day
+            </p>
           </div>
           <div>
             <label className={label}>Half Day (hours)</label>
