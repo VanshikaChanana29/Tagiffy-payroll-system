@@ -1,5 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
+  ChevronDown,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  RotateCcw,
   Clock,
   Calendar,
   CheckCircle2,
@@ -32,6 +37,24 @@ const AllAttendancePage = () => {
   const [records, setRecords] = useState([]);
   const [stats, setStats] = useState({ totalPresent: 0, totalHalfDay: 0, totalLeave: 0 });
   const [loading, setLoading] = useState(true);
+
+  // Client-side column filters
+  const [designationFilter, setDesignationFilter] = useState('All');
+  const [checkInFrom, setCheckInFrom] = useState('');
+  const [checkInTo, setCheckInTo] = useState('');
+  const [locationFilter, setLocationFilter] = useState('All');
+  const [checkOutFilter, setCheckOutFilter] = useState('All');
+  const [hoursFilter, setHoursFilter] = useState('All');
+  const [workModeFilter, setWorkModeFilter] = useState('All');
+
+  // Sorting ('' keeps the server order)
+  const [sortBy, setSortBy] = useState('');
+  const [sortDir, setSortDir] = useState('asc');
+
+  // Filters menu: which filters the user has turned on
+  const [filterMenuOpen, setFilterMenuOpen] = useState(false);
+  const [enabledFilters, setEnabledFilters] = useState([]);
+  const filterMenuRef = useRef(null);
 
   // Edit record modal state
   const [selectedRecord, setSelectedRecord] = useState(null);
@@ -95,6 +118,251 @@ const AllAttendancePage = () => {
     } finally {
       setSaving(false);
     }
+  };
+
+  const designations = useMemo(
+    () => [...new Set(records.map((r) => r.userId?.designation).filter(Boolean))].sort(),
+    [records]
+  );
+
+  const timeOfDay = (date) => (date ? format(new Date(date), 'HH:mm') : null);
+
+  const visibleRecords = useMemo(() => {
+    const filtered = records.filter((r) => {
+      if (designationFilter !== 'All' && r.userId?.designation !== designationFilter) return false;
+
+      const inTime = timeOfDay(r.checkIn);
+      if ((checkInFrom || checkInTo) && !inTime) return false;
+      if (checkInFrom && inTime < checkInFrom) return false;
+      if (checkInTo && inTime > checkInTo) return false;
+
+      const outside = !!r.checkInLocation?.isOutsideGeofence;
+      if (locationFilter === 'Outside' && !outside) return false;
+      if (locationFilter === 'Inside' && (outside || !r.checkIn)) return false;
+
+      if (checkOutFilter === 'Done' && !r.checkOut) return false;
+      if (checkOutFilter === 'Pending' && r.checkOut) return false;
+
+      const hours = r.totalHours || 0;
+      if (hoursFilter === 'InProgress' && !(r.checkIn && !r.totalHours)) return false;
+      if (hoursFilter === 'lt4' && !(r.totalHours && hours < 4)) return false;
+      if (hoursFilter === '4to8' && !(hours >= 4 && hours < 8)) return false;
+      if (hoursFilter === 'gte8' && hours < 8) return false;
+
+      if (workModeFilter !== 'All' && r.workMode !== workModeFilter) return false;
+      return true;
+    });
+
+    if (!sortBy) return filtered;
+
+    const getValue = (r) => {
+      switch (sortBy) {
+        case 'name':
+          return (r.userId?.name || '').toLowerCase();
+        case 'department':
+          return `${r.userId?.department || ''} ${r.userId?.designation || ''}`.toLowerCase();
+        case 'checkIn':
+          return r.checkIn ? new Date(r.checkIn).getTime() : null;
+        case 'checkOut':
+          return r.checkOut ? new Date(r.checkOut).getTime() : null;
+        case 'totalHours':
+          return r.totalHours || 0;
+        case 'workMode':
+          return (r.workMode || '').toLowerCase();
+        case 'status':
+          return (r.status || '').toLowerCase();
+        default:
+          return null;
+      }
+    };
+
+    const direction = sortDir === 'asc' ? 1 : -1;
+    return [...filtered].sort((a, b) => {
+      const va = getValue(a);
+      const vb = getValue(b);
+      // Empty values always go to the bottom
+      if (va === null && vb === null) return 0;
+      if (va === null) return 1;
+      if (vb === null) return -1;
+      if (va < vb) return -1 * direction;
+      if (va > vb) return 1 * direction;
+      return 0;
+    });
+  }, [
+    records,
+    designationFilter,
+    checkInFrom,
+    checkInTo,
+    locationFilter,
+    checkOutFilter,
+    hoursFilter,
+    workModeFilter,
+    sortBy,
+    sortDir,
+  ]);
+
+  const selectOptions = (pairs) => pairs.map(([value, label]) => ({ value, label: label || value }));
+
+  // Every filter the "Filters" menu can turn on; `isSet` says whether it is narrowing the list
+  const filterDefs = [
+    {
+      key: 'department',
+      label: 'Department',
+      value: department,
+      isSet: department !== 'All',
+      display: department,
+      set: setDepartment,
+      reset: () => setDepartment('All'),
+      options: selectOptions([['All', 'All Departments'], ...departments.map((d) => [d.name])]),
+    },
+    {
+      key: 'designation',
+      label: 'Designation',
+      value: designationFilter,
+      isSet: designationFilter !== 'All',
+      display: designationFilter,
+      set: setDesignationFilter,
+      reset: () => setDesignationFilter('All'),
+      options: selectOptions([['All', 'All Designations'], ...designations.map((d) => [d])]),
+    },
+    {
+      key: 'checkIn',
+      label: 'Check-In Time',
+      isSet: !!(checkInFrom || checkInTo),
+      display: `${checkInFrom || '…'} – ${checkInTo || '…'}`,
+      reset: () => {
+        setCheckInFrom('');
+        setCheckInTo('');
+      },
+    },
+    {
+      key: 'location',
+      label: 'Punch Location',
+      value: locationFilter,
+      isSet: locationFilter !== 'All',
+      display: locationFilter === 'Inside' ? 'Inside Geofence' : 'Outside Geofence',
+      set: setLocationFilter,
+      reset: () => setLocationFilter('All'),
+      options: selectOptions([
+        ['All', 'All Locations'],
+        ['Inside', 'Inside Geofence'],
+        ['Outside', 'Outside Geofence'],
+      ]),
+    },
+    {
+      key: 'checkOut',
+      label: 'Check-Out',
+      value: checkOutFilter,
+      isSet: checkOutFilter !== 'All',
+      display: checkOutFilter === 'Done' ? 'Checked Out' : 'Not Checked Out',
+      set: setCheckOutFilter,
+      reset: () => setCheckOutFilter('All'),
+      options: selectOptions([
+        ['All', 'All'],
+        ['Done', 'Checked Out'],
+        ['Pending', 'Not Checked Out'],
+      ]),
+    },
+    {
+      key: 'hours',
+      label: 'Total Hours',
+      value: hoursFilter,
+      isSet: hoursFilter !== 'All',
+      display: { InProgress: 'In Progress', lt4: '< 4h', '4to8': '4h – 8h', gte8: '≥ 8h' }[hoursFilter],
+      set: setHoursFilter,
+      reset: () => setHoursFilter('All'),
+      options: selectOptions([
+        ['All', 'All'],
+        ['InProgress', 'In Progress'],
+        ['lt4', 'Less than 4h'],
+        ['4to8', '4h – 8h'],
+        ['gte8', '8h or more'],
+      ]),
+    },
+    {
+      key: 'workMode',
+      label: 'Work Mode',
+      value: workModeFilter,
+      isSet: workModeFilter !== 'All',
+      display: workModeFilter,
+      set: setWorkModeFilter,
+      reset: () => setWorkModeFilter('All'),
+      options: selectOptions([['All', 'All Modes'], ['Office'], ['Remote']]),
+    },
+    {
+      key: 'status',
+      label: 'Status',
+      value: statusFilter,
+      isSet: statusFilter !== 'All',
+      display: statusFilter,
+      set: setStatusFilter,
+      reset: () => setStatusFilter('All'),
+      options: selectOptions([['All', 'All Statuses'], ['Present'], ['Half-day'], ['Leave'], ['Absent']]),
+    },
+  ];
+
+  const appliedFilters = filterDefs.filter((f) => f.isSet);
+  const hasActiveFilters = search || appliedFilters.length > 0 || sortBy;
+
+  const removeFilter = (def) => {
+    def.reset();
+    setEnabledFilters((keys) => keys.filter((k) => k !== def.key));
+  };
+
+  const toggleFilter = (def) => {
+    if (enabledFilters.includes(def.key)) removeFilter(def);
+    else setEnabledFilters((keys) => [...keys, def.key]);
+  };
+
+  const clearAllFilters = () => {
+    filterDefs.forEach((f) => f.reset());
+    setEnabledFilters([]);
+  };
+
+  const resetFilters = () => {
+    setSearch('');
+    clearAllFilters();
+    setSortBy('');
+    setSortDir('asc');
+  };
+
+  // Close the filter menu on outside click
+  useEffect(() => {
+    if (!filterMenuOpen) return;
+    const onClick = (e) => {
+      if (filterMenuRef.current && !filterMenuRef.current.contains(e.target)) setFilterMenuOpen(false);
+    };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, [filterMenuOpen]);
+
+  const handleSort = (field) => {
+    if (sortBy === field) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortBy(field);
+      setSortDir('asc');
+    }
+  };
+
+  const SortableHeader = ({ field, children }) => {
+    const active = sortBy === field;
+    const Icon = !active ? ArrowUpDown : sortDir === 'asc' ? ArrowUp : ArrowDown;
+    return (
+      <th className="px-6 py-4" aria-sort={active ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}>
+        <button
+          type="button"
+          onClick={() => handleSort(field)}
+          title={`Sort by ${children} (${active && sortDir === 'asc' ? 'descending' : 'ascending'})`}
+          className={`inline-flex items-center gap-1.5 uppercase font-semibold transition-colors hover:text-brand-600 dark:hover:text-brand-300 ${
+            active ? 'text-brand-600 dark:text-brand-300' : ''
+          }`}
+        >
+          {children}
+          <Icon className={`w-3.5 h-3.5 ${active ? '' : 'opacity-40'}`} />
+        </button>
+      </th>
+    );
   };
 
   const getStatusBadge = (status) => {
@@ -201,51 +469,154 @@ const AllAttendancePage = () => {
         </div>
       </div>
 
-      {/* Filter & Search Bar */}
-      <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex flex-col md:flex-row items-center justify-between gap-4">
-        <div className="relative w-full md:w-80">
-          <Search className="w-3.5 h-3.5 text-slate-400 absolute inset-y-0 left-3.5 my-auto" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search employee name or ID..."
-            className="theme-input w-full pl-10 pr-4 text-xs"
-          />
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
-          <div className="flex items-center gap-1.5">
-            <Filter className="w-3.5 h-3.5 text-slate-400" />
-            <span className="text-xs text-slate-500 dark:text-slate-400">Dept:</span>
-            <select
-              value={department}
-              onChange={(e) => setDepartment(e.target.value)}
-              className="theme-input text-xs"
-            >
-              <option value="All">All Departments</option>
-              {departments.map((d) => (
-                <option key={d._id} value={d.name}>
-                  {d.name}
-                </option>
-              ))}
-            </select>
+      {/* Search & Filters */}
+      <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card space-y-3">
+        <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="relative w-full md:w-80">
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute inset-y-0 left-3.5 my-auto" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search employee name or ID..."
+              className="theme-input w-full pl-10 pr-4 text-xs"
+            />
           </div>
 
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs text-slate-500 dark:text-slate-400">Status:</span>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="theme-input text-xs"
-            >
-              <option value="All">All Statuses</option>
-              <option value="Present">Present</option>
-              <option value="Half-day">Half-day</option>
-              <option value="Leave">Leave</option>
-            </select>
+          <div className="flex items-center gap-3 w-full md:w-auto justify-end text-xs">
+            <span className="text-slate-500 dark:text-slate-400">
+              Showing <b className="text-slate-900 dark:text-white">{visibleRecords.length}</b> of {records.length}
+            </span>
+
+            {hasActiveFilters && (
+              <button
+                type="button"
+                onClick={resetFilters}
+                className="px-3 py-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 font-semibold inline-flex items-center gap-1.5"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                Reset
+              </button>
+            )}
+
+            <div className="relative" ref={filterMenuRef}>
+              <button
+                type="button"
+                onClick={() => setFilterMenuOpen((o) => !o)}
+                aria-expanded={filterMenuOpen}
+                className={`px-3.5 py-2 rounded-xl border font-semibold inline-flex items-center gap-1.5 transition-colors ${
+                  filterMenuOpen || appliedFilters.length
+                    ? 'border-brand-500 bg-brand-500/10 text-brand-700 dark:text-brand-300'
+                    : 'border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+              >
+                <Filter className="w-3.5 h-3.5" />
+                Filters
+                {appliedFilters.length > 0 && (
+                  <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-brand-600 text-white text-[10px] font-bold inline-flex items-center justify-center">
+                    {appliedFilters.length}
+                  </span>
+                )}
+                <ChevronDown className={`w-3.5 h-3.5 transition-transform ${filterMenuOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              {filterMenuOpen && (
+                <div className="absolute right-0 top-full mt-2 z-40 w-80 max-w-[calc(100vw-2rem)] max-h-[70vh] overflow-y-auto rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-soft">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-800">
+                    <span className="font-bold text-slate-900 dark:text-white">Filter by</span>
+                    {(enabledFilters.length > 0 || appliedFilters.length > 0) && (
+                      <button
+                        type="button"
+                        onClick={clearAllFilters}
+                        className="text-brand-600 dark:text-brand-400 font-semibold hover:underline"
+                      >
+                        Clear all
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="py-1">
+                    {filterDefs.map((f) => {
+                      const enabled = enabledFilters.includes(f.key);
+                      return (
+                        <div key={f.key} className="px-4 py-2">
+                          <label className="flex items-center gap-2.5 cursor-pointer select-none text-slate-700 dark:text-slate-300 font-semibold">
+                            <input
+                              type="checkbox"
+                              checked={enabled}
+                              onChange={() => toggleFilter(f)}
+                              className="w-3.5 h-3.5 accent-brand-600 cursor-pointer"
+                            />
+                            {f.label}
+                          </label>
+
+                          {enabled && (
+                            <div className="mt-2 pl-6">
+                              {f.key === 'checkIn' ? (
+                                <div className="flex items-center gap-1.5">
+                                  <input
+                                    type="time"
+                                    value={checkInFrom}
+                                    onChange={(e) => setCheckInFrom(e.target.value)}
+                                    className="theme-input text-xs flex-1 min-w-0"
+                                    aria-label="Check-in from"
+                                  />
+                                  <span className="text-slate-400">–</span>
+                                  <input
+                                    type="time"
+                                    value={checkInTo}
+                                    onChange={(e) => setCheckInTo(e.target.value)}
+                                    className="theme-input text-xs flex-1 min-w-0"
+                                    aria-label="Check-in to"
+                                  />
+                                </div>
+                              ) : (
+                                <select
+                                  value={f.value}
+                                  onChange={(e) => f.set(e.target.value)}
+                                  className="theme-input text-xs w-full"
+                                >
+                                  {f.options.map((o) => (
+                                    <option key={o.value} value={o.value}>
+                                      {o.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
+
+        {/* Applied filter chips */}
+        {appliedFilters.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
+            {appliedFilters.map((f) => (
+              <span
+                key={f.key}
+                className="inline-flex items-center gap-1.5 pl-2.5 pr-1 py-1 rounded-full bg-brand-500/10 border border-brand-500/25 text-[11px] text-brand-700 dark:text-brand-300"
+              >
+                <span className="text-slate-500 dark:text-slate-400">{f.label}:</span>
+                <b>{f.display}</b>
+                <button
+                  type="button"
+                  onClick={() => removeFilter(f)}
+                  aria-label={`Remove ${f.label} filter`}
+                  className="p-0.5 rounded-full hover:bg-brand-500/20"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Attendance Records Table */}
@@ -264,18 +635,25 @@ const AllAttendancePage = () => {
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-100 dark:bg-slate-950/80 text-slate-600 dark:text-slate-400 uppercase font-semibold border-b border-slate-200 dark:border-slate-800">
                 <tr>
-                  <th className="px-6 py-4">Employee</th>
-                  <th className="px-6 py-4">Department</th>
-                  <th className="px-6 py-4">Check-In</th>
-                  <th className="px-6 py-4">Check-Out</th>
-                  <th className="px-6 py-4">Total Hours</th>
-                  <th className="px-6 py-4">Work Mode</th>
-                  <th className="px-6 py-4">Status</th>
+                  <SortableHeader field="name">Employee</SortableHeader>
+                  <SortableHeader field="department">Department</SortableHeader>
+                  <SortableHeader field="checkIn">Check-In</SortableHeader>
+                  <SortableHeader field="checkOut">Check-Out</SortableHeader>
+                  <SortableHeader field="totalHours">Total Hours</SortableHeader>
+                  <SortableHeader field="workMode">Work Mode</SortableHeader>
+                  <SortableHeader field="status">Status</SortableHeader>
                   <th className="px-6 py-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 dark:divide-slate-800/60 font-medium">
-                {records.map((r) => (
+                {visibleRecords.length === 0 && (
+                  <tr>
+                    <td colSpan={8} className="px-6 py-10 text-center text-slate-500 dark:text-slate-400">
+                      No records match the selected filters.
+                    </td>
+                  </tr>
+                )}
+                {visibleRecords.map((r) => (
                   <tr key={r._id} className="hover:bg-slate-50 dark:hover:bg-slate-850/50 transition-colors">
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
