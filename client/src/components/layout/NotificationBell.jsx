@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bell, CheckCheck, CalendarClock, MapPinOff, FileText, Wallet, ClipboardCheck, Clock, Home, Landmark, Receipt, ChevronRight } from 'lucide-react';
+import { Bell, CheckCheck, CalendarClock, MapPinOff, FileText, Wallet, ClipboardCheck, Clock, Home, Landmark, Receipt, KeyRound, ChevronRight } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { useNotifications } from '../../context/NotificationContext';
 import { useAuth } from '../../context/AuthContext';
@@ -31,6 +31,7 @@ const ICONS_BY_TYPE = {
   reimbursement_approved: Receipt,
   reimbursement_rejected: Receipt,
   reimbursement_cancelled: Receipt,
+  password_reset_by_hr: KeyRound,
 };
 
 // Which area a notification is about, from its type prefix.

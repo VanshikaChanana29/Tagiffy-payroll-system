@@ -24,6 +24,7 @@ const NOTIFICATION_TYPES = [
   'bank_details_correction_approved',
   'bank_details_correction_rejected',
   'bank_details_updated_by_hr',
+  'password_reset_by_hr',
 ];
 
 const notificationSchema = new mongoose.Schema(

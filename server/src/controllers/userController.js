@@ -892,6 +892,67 @@ const deleteEmployee = async (req, res) => {
   }
 };
 
+// @desc    Set a new password for someone who forgot theirs
+// @route   PUT /api/users/:id/password
+// @access  Private (Admin; another admin's account needs a super admin)
+const resetEmployeePassword = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { newPassword } = req.body;
+
+    // Your own password goes through change-password, which asks for the old one.
+    if (req.user._id.toString() === id) {
+      return res.status(400).json({
+        success: false,
+        message: 'Use Change Password on your profile to change your own password.',
+      });
+    }
+
+    if (!newPassword || newPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'New password must be at least 6 characters long.',
+      });
+    }
+
+    const employee = await User.findById(id);
+    if (!employee) {
+      return res.status(404).json({ success: false, message: 'Employee not found' });
+    }
+
+    if (isAdminRole(employee.role) && !isSuperAdmin(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        message: "Only a super admin can reset an admin's password.",
+      });
+    }
+
+    // The pre-save hook hashes it.
+    employee.password = newPassword;
+    await employee.save();
+
+    notify({
+      recipients: [employee._id],
+      type: 'password_reset_by_hr',
+      title: 'Your password was reset',
+      message: `${req.user.name} set a new password for your account. Contact HR if you did not ask for this.`,
+      relatedEntity: { kind: 'User', id: employee._id },
+    });
+
+    res.status(200).json({
+      success: true,
+      message: `Password reset for ${employee.name}. Share the new password with them securely.`,
+    });
+  } catch (error) {
+    console.error('Reset Password Error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to reset password',
+      error: error.message,
+    });
+  }
+};
+
 // @desc    Get employee documents
 // @route   GET /api/users/:id/documents
 // @access  Private (Self or Admin)
@@ -1702,6 +1763,7 @@ module.exports = {
   bulkUploadEmployees,
   updateEmployee,
   deleteEmployee,
+  resetEmployeePassword,
   getUserDocuments,
   addUserDocument,
   deleteUserDocument,

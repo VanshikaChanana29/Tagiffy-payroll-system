@@ -20,6 +20,9 @@ import {
   ArrowUp,
   ArrowDown,
   ArrowUpDown,
+  KeyRound,
+  EyeOff,
+  RefreshCw,
 } from 'lucide-react';
 import api from '../../api/client';
 import { downloadEmployeeTemplate, uploadEmployeeSheet } from '../../api/files';
@@ -46,7 +49,7 @@ const compareText = (a, b) =>
 const EmployeeDirectoryPage = () => {
   const navigate = useNavigate();
   const { selectEmployee } = useEmployeeInspection();
-  const { isSuperAdmin } = useAuth();
+  const { user, isSuperAdmin } = useAuth();
   const [employees, setEmployees] = useState([]);
   const [departments, setDepartments] = useState([]);
   const [orgDepartments, setOrgDepartments] = useState([]);
@@ -67,6 +70,12 @@ const EmployeeDirectoryPage = () => {
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState(null);
   const [actionLoading, setActionLoading] = useState(false);
+
+  // Password reset, for an employee who forgot theirs
+  const [resetTarget, setResetTarget] = useState(null);
+  const [resetForm, setResetForm] = useState({ newPassword: '', confirmPassword: '' });
+  const [showResetPassword, setShowResetPassword] = useState(false);
+  const [resetLoading, setResetLoading] = useState(false);
 
   // Bulk upload state
   const [bulkFile, setBulkFile] = useState(null);
@@ -276,6 +285,56 @@ const EmployeeDirectoryPage = () => {
       }
     } catch (error) {
       toast.error('Failed to change employee status');
+    }
+  };
+
+  // Admins reset employee/manager passwords; another admin's needs a super admin.
+  // Nobody resets their own here, that's Change Password on the profile.
+  const canResetPassword = (emp) => {
+    const myId = user?._id || user?.id;
+    if (emp._id === myId) return false;
+    const targetIsAdmin = emp.role === 'admin' || emp.role === 'super_admin';
+    return isSuperAdmin || !targetIsAdmin;
+  };
+
+  const openResetPassword = (emp) => {
+    setResetTarget(emp);
+    setResetForm({ newPassword: '', confirmPassword: '' });
+    setShowResetPassword(false);
+  };
+
+  const generatePassword = () => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789@#$%';
+    const bytes = crypto.getRandomValues(new Uint32Array(10));
+    const password = Array.from(bytes, (b) => chars[b % chars.length]).join('');
+    setResetForm({ newPassword: password, confirmPassword: password });
+    setShowResetPassword(true);
+  };
+
+  const handleResetPassword = async (e) => {
+    e.preventDefault();
+    if (resetForm.newPassword.length < 6) {
+      toast.error('Password must be at least 6 characters long');
+      return;
+    }
+    if (resetForm.newPassword !== resetForm.confirmPassword) {
+      toast.error('Passwords do not match');
+      return;
+    }
+
+    setResetLoading(true);
+    try {
+      const res = await api.put(`/users/${resetTarget._id}/password`, {
+        newPassword: resetForm.newPassword,
+      });
+      if (res.data.success) {
+        toast.success(res.data.message);
+        setResetTarget(null);
+      }
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to reset password');
+    } finally {
+      setResetLoading(false);
     }
   };
 
@@ -622,6 +681,16 @@ const EmployeeDirectoryPage = () => {
                             <Edit2 className="w-4 h-4" />
                           </button>
                         </Tooltip>
+                        {canResetPassword(emp) && (
+                          <Tooltip label="Reset password" side="top">
+                            <button aria-label="Reset password"
+                              onClick={() => openResetPassword(emp)}
+                              className="p-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500 text-amber-700 dark:text-amber-300 hover:text-white transition-all"
+                            >
+                              <KeyRound className="w-4 h-4" />
+                            </button>
+                          </Tooltip>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -1024,6 +1093,109 @@ const EmployeeDirectoryPage = () => {
                     <Save className="w-4 h-4" />
                   )}
                   Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: RESET PASSWORD */}
+      {resetTarget && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl max-w-md w-full p-6 sm:p-8 shadow-soft space-y-6 my-8 transition-colors">
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+                  <KeyRound className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+                    Reset Password • {resetTarget.name}
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    {resetTarget.employeeId} • {resetTarget.email}
+                  </p>
+                </div>
+              </div>
+              <Tooltip label="Close" side="left">
+                <button aria-label="Close"
+                  onClick={() => setResetTarget(null)}
+                  className="text-slate-400 hover:text-slate-700 dark:hover:text-white p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </Tooltip>
+            </div>
+
+            <form onSubmit={handleResetPassword} className="space-y-4 text-xs">
+              <p className="text-slate-500 dark:text-slate-400">
+                Their old password stops working right away. Share the new one with them securely
+                and ask them to change it from their profile after signing in.
+              </p>
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300">New Password</label>
+                  <button
+                    type="button"
+                    onClick={generatePassword}
+                    className="inline-flex items-center gap-1 text-brand-600 dark:text-brand-400 font-semibold hover:underline"
+                  >
+                    <RefreshCw className="w-3 h-3" /> Generate
+                  </button>
+                </div>
+                <div className="relative">
+                  <input
+                    type={showResetPassword ? 'text' : 'password'}
+                    value={resetForm.newPassword}
+                    onChange={(e) => setResetForm({ ...resetForm, newPassword: e.target.value })}
+                    className="theme-input w-full pr-9"
+                    minLength={6}
+                    required
+                    autoComplete="new-password"
+                  />
+                  <button
+                    type="button"
+                    aria-label={showResetPassword ? 'Hide password' : 'Show password'}
+                    onClick={() => setShowResetPassword((v) => !v)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 dark:hover:text-white"
+                  >
+                    {showResetPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Confirm Password</label>
+                <input
+                  type={showResetPassword ? 'text' : 'password'}
+                  value={resetForm.confirmPassword}
+                  onChange={(e) => setResetForm({ ...resetForm, confirmPassword: e.target.value })}
+                  className="theme-input w-full"
+                  minLength={6}
+                  required
+                  autoComplete="new-password"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-200 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setResetTarget(null)}
+                  className="px-4 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={resetLoading}
+                  className="px-6 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-semibold flex items-center gap-2 disabled:opacity-50"
+                >
+                  {resetLoading ? (
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  ) : (
+                    <KeyRound className="w-4 h-4" />
+                  )}
+                  Reset Password
                 </button>
               </div>
             </form>

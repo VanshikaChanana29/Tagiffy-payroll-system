@@ -11,6 +11,7 @@ const {
   bulkUploadEmployees,
   updateEmployee,
   deleteEmployee,
+  resetEmployeePassword,
   getUserDocuments,
   addUserDocument,
   deleteUserDocument,
@@ -77,6 +78,9 @@ router.route('/:id/documents')
   .post(uploadDocument, addUserDocument);
 
 router.put('/:id/salary', authorize('admin'), updateEmployeeSalary);
+
+// HR sets a new password when an employee forgets theirs
+router.put('/:id/password', authorize('admin'), resetEmployeePassword);
 
 router.get('/:id/documents/:docId/download', downloadUserDocument);
 
