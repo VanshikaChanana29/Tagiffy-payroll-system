@@ -10,7 +10,7 @@ const orgSettingsSchema = new mongoose.Schema(
     // Marker for the singleton document.
     key: { type: String, default: 'default', unique: true },
 
-    companyName: { type: String, default: 'WorkZen' },
+    companyName: { type: String, default: 'Taggify' },
 
     // Shift window in 24-hour "HH:mm", interpreted in the server's timezone.
     shiftStart: { type: String, default: '09:30' },
@@ -93,6 +93,11 @@ orgSettingsSchema.statics.getSettings = async function () {
   let settings = await this.findOne({ key: 'default' });
   if (!settings) {
     settings = await this.create({ key: 'default' });
+  }
+  // Orgs created before the rename still carry the old placeholder default.
+  if (!settings.companyName || settings.companyName === 'WorkZen') {
+    settings.companyName = 'Taggify';
+    await settings.save();
   }
   return settings;
 };
