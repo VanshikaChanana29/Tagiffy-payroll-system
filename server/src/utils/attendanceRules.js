@@ -105,6 +105,21 @@ const isWorkingDay = (date, settings, holidayMap = null, weeklyOffDays = null) =
   return true;
 };
 
+/**
+ * Hours worked across all of the day's closed punch sessions, rounded to 2
+ * decimals. The time between punching out and punching back in is not counted.
+ */
+const sumSessionHours = (attendance) => {
+  const sessions = attendance.sessions?.length
+    ? attendance.sessions
+    : [{ checkIn: attendance.checkIn, checkOut: attendance.checkOut }];
+  const workedMs = sessions.reduce((acc, session) => {
+    if (!session.checkIn || !session.checkOut) return acc;
+    return acc + Math.max(0, new Date(session.checkOut) - new Date(session.checkIn));
+  }, 0);
+  return parseFloat((workedMs / (1000 * 60 * 60)).toFixed(2));
+};
+
 /** Recomputes every derived field on a record after its punches change. */
 const applyAttendanceRules = (attendance, settings) => {
   const totalHours = Number(attendance.totalHours) || 0;
@@ -156,6 +171,7 @@ module.exports = {
   calculateEarlyMinutes,
   calculateOvertimeHours,
   resolveStatus,
+  sumSessionHours,
   isWorkingDay,
   applyAttendanceRules,
 };

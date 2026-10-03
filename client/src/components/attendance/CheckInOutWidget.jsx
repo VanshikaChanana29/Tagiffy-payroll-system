@@ -68,8 +68,13 @@ const CheckInOutWidget = ({ onAttendanceChange }) => {
   useEffect(() => {
     let interval = null;
     if (statusData.isCheckedIn && !statusData.isCheckedOut && statusData.attendance?.checkIn) {
+      // After a repeat punch-in, count from the current session and add the
+      // hours already worked today, so the break in between isn't counted.
+      const sessions = statusData.attendance.sessions || [];
+      const sessionStart = sessions.length ? sessions[sessions.length - 1].checkIn : statusData.attendance.checkIn;
+      const earlierMs = sessions.length > 1 ? (statusData.attendance.totalHours || 0) * 3600 * 1000 : 0;
       const updateTimer = () => {
-        const diffMs = new Date() - new Date(statusData.attendance.checkIn);
+        const diffMs = earlierMs + (new Date() - new Date(sessionStart));
         const totalSeconds = Math.max(0, Math.floor(diffMs / 1000));
         const hrs = String(Math.floor(totalSeconds / 3600)).padStart(2, '0');
         const mins = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, '0');
@@ -152,6 +157,8 @@ const CheckInOutWidget = ({ onAttendanceChange }) => {
   }
 
   const { isCheckedIn, isCheckedOut, attendance } = statusData;
+  const sessions = attendance?.sessions || [];
+  const formatPunch = (date) => (date ? format(new Date(date), 'hh:mm a') : 'now');
 
   return (
     <div className="p-6 sm:p-8 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-soft space-y-6 transition-colors">
@@ -221,6 +228,19 @@ const CheckInOutWidget = ({ onAttendanceChange }) => {
             </span>
           </div>
 
+          {sessions.length > 1 && (
+            <div className="text-[11px] text-slate-500 dark:text-slate-400 space-y-0.5">
+              {sessions.map((session, index) => (
+                <div key={index} className="flex justify-between">
+                  <span>Session {index + 1}</span>
+                  <span className="font-mono">
+                    {formatPunch(session.checkIn)} – {formatPunch(session.checkOut)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
           <div className="flex items-center justify-between text-xs pt-2 border-t border-slate-200 dark:border-slate-800">
             <span className="text-slate-500 dark:text-slate-400">Total Work Hours:</span>
             <span className="font-bold text-emerald-600 dark:text-emerald-400">
@@ -245,7 +265,7 @@ const CheckInOutWidget = ({ onAttendanceChange }) => {
           </div>
 
           {/* Work mode — Office or Work From Home, same attendance rules either way */}
-          {!isCheckedIn && (
+          {(!isCheckedIn || isCheckedOut) && (
             <div className="flex items-center gap-2 mt-3">
               <button
                 type="button"
@@ -311,19 +331,26 @@ const CheckInOutWidget = ({ onAttendanceChange }) => {
                 <CheckCircle2 className="w-4 h-4" /> Attendance Completed
               </span>
               <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">Status: {attendance?.status}</p>
+              {/* Called back for more work after punching out: start another session */}
+              <button
+                onClick={handleCheckIn}
+                disabled={submitting}
+                className="mt-3 w-full py-2 px-4 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs flex items-center justify-center gap-1.5 transition-all disabled:opacity-50"
+              >
+                <LogIn className="w-4 h-4" />
+                Punch In Again
+              </button>
             </div>
           )}
 
           {/* Optional remarks note */}
-          {!isCheckedOut && (
-            <input
-              type="text"
-              value={remarks}
-              onChange={(e) => setRemarks(e.target.value)}
-              placeholder="Add optional notes/remarks..."
-              className="theme-input w-full text-xs"
-            />
-          )}
+          <input
+            type="text"
+            value={remarks}
+            onChange={(e) => setRemarks(e.target.value)}
+            placeholder="Add optional notes/remarks..."
+            className="theme-input w-full text-xs"
+          />
         </div>
       </div>
     </div>

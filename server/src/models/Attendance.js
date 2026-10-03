@@ -23,6 +23,17 @@ const attendanceSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    // Every punch-in/punch-out pair of the day. Someone can punch out at 6 and
+    // back in at 7 for late work; totalHours adds the sessions and skips the gap.
+    // checkIn/checkOut above stay the day's first punch-in and last punch-out.
+    // Empty on records from before sessions existed: checkIn/checkOut is the one session.
+    sessions: [
+      {
+        _id: false,
+        checkIn: { type: Date, required: true },
+        checkOut: { type: Date, default: null },
+      },
+    ],
     status: {
       type: String,
       enum: ['Present', 'Absent', 'Half-day', 'Leave'],

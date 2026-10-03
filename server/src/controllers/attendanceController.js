@@ -3,7 +3,12 @@ const AttendanceRequest = require('../models/AttendanceRequest');
 const Leave = require('../models/Leave');
 const User = require('../models/User');
 const OrgSettings = require('../models/OrgSettings');
-const { applyAttendanceRules, isWorkingDay, resolveEmployeeShift } = require('../utils/attendanceRules');
+const {
+  applyAttendanceRules,
+  isWorkingDay,
+  resolveEmployeeShift,
+  sumSessionHours,
+} = require('../utils/attendanceRules');
 const { getVisibleUserIds, canManageEmployee } = require('../utils/teamScope');
 const { isAdminRole } = require('../utils/roles');
 const { getHolidayMap } = require('./holidayController');
@@ -32,7 +37,8 @@ const sendPunchLocationAlert = async ({ attendance, field, location, employee, t
     const place = location ? await reverseGeocode(location.lat, location.lng) : null;
     const fullLocation = location ? { ...location, ...(place || {}) } : null;
 
-    if (place) {
+    // A repeat punch-in has no location field of its own to store the place on.
+    if (place && field) {
       await Attendance.updateOne(
         { _id: attendance._id },
         {
@@ -127,6 +133,53 @@ const resolveDayStatus = ({
 // the button alone would still leave the API open.
 const EXEMPT_PUNCH_MESSAGE = 'Attendance is not tracked for your role, so punch in/out is not required.';
 
+/**
+ * Punch-in after the day was already punched out, e.g. called back for work
+ * at 7 pm. Opens a new session; its hours are added at the next punch-out.
+ * The first punch-in of the day still decides the late mark, so this one
+ * never counts as late.
+ */
+const punchInAgain = async (req, res, attendance) => {
+  const { workMode = 'Office', remarks = '', location } = req.body;
+  const now = new Date();
+
+  if (!attendance.sessions.length) {
+    attendance.sessions.push({ checkIn: attendance.checkIn, checkOut: attendance.checkOut });
+  }
+  attendance.sessions.push({ checkIn: now });
+  attendance.checkOut = null;
+  if (remarks) {
+    attendance.remarks = attendance.remarks ? `${attendance.remarks} | ${remarks}` : remarks;
+  }
+
+  const settings = await OrgSettings.getSettings();
+  applyAttendanceRules(attendance, resolveEmployeeShift(settings, req.user));
+  await attendance.save();
+
+  // HR still hears about a WFH or off-site punch, same as the first one.
+  const punchLocation = buildPunchLocation(location, settings);
+  const timeStr = format(now, 'hh:mm a');
+  if (workMode === 'Remote' || punchLocation?.isOutsideGeofence) {
+    const isWfh = workMode === 'Remote';
+    sendPunchLocationAlert({
+      attendance,
+      field: null,
+      location: punchLocation,
+      employee: req.user,
+      type: isWfh ? 'attendance_wfh_checkin' : 'attendance_outside_geofence',
+      title: isWfh ? 'Work From Home check-in' : 'Punch-in outside office location',
+      buildMessage: (placeNote) =>
+        `${req.user.name} punched in again${isWfh ? ' from Work From Home' : ''} at ${timeStr}${placeNote}.`,
+    });
+  }
+
+  res.status(200).json({
+    success: true,
+    message: `Punched in again at ${timeStr}. This session's hours will be added to today's total.`,
+    attendance,
+  });
+};
+
 // @desc    Check-in for today
 // @route   POST /api/attendance/check-in
 // @access  Private (Employee / Admin for self)
@@ -141,6 +194,11 @@ const checkIn = async (req, res) => {
 
     // Check if attendance already recorded today
     let attendance = await Attendance.findOne({ userId, date: todayStr });
+
+    // Already punched out today and back for more work: start another session.
+    if (attendance && attendance.checkIn && attendance.checkOut) {
+      return punchInAgain(req, res, attendance);
+    }
 
     if (attendance && attendance.checkIn) {
       return res.status(400).json({
@@ -165,8 +223,10 @@ const checkIn = async (req, res) => {
         remarks: remarks || 'Checked in on time',
         status: 'Present',
       });
+      attendance.sessions = [{ checkIn: attendance.checkIn }];
     } else {
       attendance.checkIn = new Date();
+      attendance.sessions = [{ checkIn: attendance.checkIn }];
       attendance.workMode = workMode;
       attendance.checkInLocation = checkInLocation || undefined;
       attendance.status = 'Present';
@@ -279,10 +339,10 @@ const checkOut = async (req, res) => {
     const checkOutTime = new Date();
     attendance.checkOut = checkOutTime;
 
-    // Calculate working hours in decimals
-    const durationMs = checkOutTime - new Date(attendance.checkIn);
-    const hours = Math.max(0, durationMs / (1000 * 60 * 60));
-    attendance.totalHours = parseFloat(hours.toFixed(2));
+    // Close the open session; the day's hours are all sessions added up.
+    if (!attendance.sessions.length) attendance.sessions.push({ checkIn: attendance.checkIn });
+    attendance.sessions[attendance.sessions.length - 1].checkOut = checkOutTime;
+    attendance.totalHours = sumSessionHours(attendance);
 
     // Status, late mark, early exit and overtime all come from the org shift rules.
     const settings = await OrgSettings.getSettings();
@@ -785,6 +845,8 @@ const updateAttendanceRecord = async (req, res) => {
     if (status) record.status = status;
     if (checkIn) record.checkIn = new Date(checkIn);
     if (checkOut) record.checkOut = new Date(checkOut);
+    // Edited punches replace the day's sessions with the single in/out pair.
+    if (checkIn || checkOut) record.sessions = [];
     if (totalHours !== undefined) record.totalHours = Number(totalHours);
     if (workMode) record.workMode = workMode;
     if (remarks) record.remarks = remarks;
@@ -1052,6 +1114,7 @@ const reviewRegularizationRequest = async (req, res) => {
         record.checkOut = new Date(`${request.date}T${request.requestedCheckOut}:00`);
       }
       record.workMode = request.requestedWorkMode;
+      if (request.requestedCheckIn || request.requestedCheckOut) record.sessions = [];
 
       if (record.checkIn && record.checkOut) {
         const durationMs = new Date(record.checkOut) - new Date(record.checkIn);
@@ -1152,8 +1215,7 @@ const recalculateAttendance = async (req, res) => {
       // Trust the punches: recompute hours from them when both are present, so a
       // record cannot claim hours its own timestamps do not support.
       if (record.checkIn && record.checkOut) {
-        const durationMs = new Date(record.checkOut) - new Date(record.checkIn);
-        record.totalHours = parseFloat(Math.max(0, durationMs / (1000 * 60 * 60)).toFixed(2));
+        record.totalHours = sumSessionHours(record);
       }
 
       applyAttendanceRules(record, shiftByUser.get(record.userId.toString()) || orgShift);
