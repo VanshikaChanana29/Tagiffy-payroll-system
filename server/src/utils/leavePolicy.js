@@ -103,11 +103,14 @@ const getEarnedUsage = async (userIds, months, excludeLeaveId = null) => {
     if (!usage.has(uid)) usage.set(uid, new Map());
     const byMonth = usage.get(uid);
 
-    leaveDaysByMonth(leave).forEach(({ month, days }) => {
+    // Days beyond the credit are loss of pay, not earned leave, so they don't
+    // use up the balance.
+    leaveDaysByMonth(leave).forEach(({ month, days, unpaidDays = 0 }) => {
       if (!months.includes(month)) return;
+      const covered = Math.max(0, days - unpaidDays);
       const entry = byMonth.get(month) || { approved: 0, pending: 0 };
-      if (leave.status === 'Approved') entry.approved += days;
-      else entry.pending += days;
+      if (leave.status === 'Approved') entry.approved += covered;
+      else entry.pending += covered;
       byMonth.set(month, entry);
     });
   });
@@ -159,24 +162,35 @@ const withLeaveBalances = async (users) => {
 };
 
 /**
- * Checks a request against each month's remaining earned leave. Returns an
- * error message, or null when every month has room. Pass excludeLeaveId when
- * re-checking a request that is itself already counted as pending.
+ * Splits an Earned leave request against each month's remaining credit. Days
+ * the credit doesn't cover are not refused: they become unpaid (loss of pay).
+ * Returns { monthlyDays, unpaidDays, note } where each month carries its own
+ * unpaidDays and `note` explains the excess (null when fully covered). Pass
+ * excludeLeaveId when re-allocating a request that is already counted.
  */
-const checkEarnedAvailability = async (user, monthlyDays, { excludeLeaveId = null, ctx = null } = {}) => {
+const allocateEarned = async (user, monthlyDays, { excludeLeaveId = null, ctx = null } = {}) => {
   const policy = ctx || (await loadPolicyContext());
   const months = monthlyDays.map((m) => m.month);
   const usage = await getEarnedUsage([user._id], months, excludeLeaveId);
 
-  for (const { month, days } of monthlyDays) {
-    const { paid: available, credit } = buildBalance(user, month, usage, policy);
-    if (days > available) {
-      return credit === 0
-        ? `No Earned leave is credited for ${monthLabel(month)}.`
-        : `Only ${available} Earned leave day(s) left for ${monthLabel(month)} (${credit} credited per month), but this needs ${days}.`;
+  const notes = [];
+  const allocated = monthlyDays.map(({ month, days }) => {
+    const { paid: available } = buildBalance(user, month, usage, policy);
+    const unpaidDays = Math.max(0, days - available);
+    if (unpaidDays > 0) {
+      notes.push(`${unpaidDays} of ${days} day(s) in ${monthLabel(month)}`);
     }
-  }
-  return null;
+    return { month, days, unpaidDays };
+  });
+
+  const unpaidDays = allocated.reduce((sum, m) => sum + m.unpaidDays, 0);
+  return {
+    monthlyDays: allocated,
+    unpaidDays,
+    note: notes.length
+      ? `Earned leave balance is not enough: ${notes.join(', ')} will be unpaid and deducted from salary.`
+      : null,
+  };
 };
 
 /**
@@ -203,5 +217,5 @@ module.exports = {
   splitWorkingDaysByMonth,
   getLeaveBalance,
   withLeaveBalances,
-  checkEarnedAvailability,
+  allocateEarned,
 };

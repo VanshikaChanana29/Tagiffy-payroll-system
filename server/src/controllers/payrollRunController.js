@@ -59,27 +59,46 @@ const calculateLopDays = async (
     }
   });
 
+  // 2. Earned leave taken beyond the monthly credit. The leave is approved, but
+  // its excess days (stored per month) are loss of pay; the last working days
+  // of the leave within this month are the ones charged.
+  const monthKey = fromStr.slice(0, 7);
+  const paidLeaveDates = new Set();
+  const paidLeaves = await Leave.find({
+    userId: employee._id,
+    status: 'Approved',
+    leaveType: { $in: ['Paid', 'Sick'] },
+    startDate: { $lte: toStr },
+    endDate: { $gte: fromStr },
+  });
+  paidLeaves.forEach((leave) => {
+    const workingDates = [];
+    const cursor = new Date(`${leave.startDate}T00:00:00`);
+    const end = new Date(`${leave.endDate}T00:00:00`);
+    while (cursor <= end) {
+      const dateStr = format(cursor, 'yyyy-MM-dd');
+      paidLeaveDates.add(dateStr);
+      if (
+        dateStr >= fromStr &&
+        dateStr <= toStr &&
+        isWorkingDay(cursor, settings, holidayMap, employee.weeklyOffDays)
+      ) {
+        workingDates.push(dateStr);
+      }
+      cursor.setDate(cursor.getDate() + 1);
+    }
+
+    const excess = (leave.monthlyDays || []).find((m) => m.month === monthKey)?.unpaidDays || 0;
+    workingDates.slice(Math.max(0, workingDates.length - Math.ceil(excess))).forEach((d) => {
+      lopDates.add(d);
+    });
+  });
+
   const unpaidLeaveDays = lopDates.size;
   let absentDays = 0;
 
-  // 2. Absent working days, if the organisation charges for them.
+  // 3. Absent working days, if the organisation charges for them.
   if (settings.salaryStructure?.countAbsentAsLop && !skipAbsences) {
-    const paidLeaveDates = new Set();
-    const paidLeaves = await Leave.find({
-      userId: employee._id,
-      status: 'Approved',
-      leaveType: { $in: ['Paid', 'Sick'] },
-      startDate: { $lte: toStr },
-      endDate: { $gte: fromStr },
-    });
-    paidLeaves.forEach((leave) => {
-      const cursor = new Date(`${leave.startDate}T00:00:00`);
-      const end = new Date(`${leave.endDate}T00:00:00`);
-      while (cursor <= end) {
-        paidLeaveDates.add(format(cursor, 'yyyy-MM-dd'));
-        cursor.setDate(cursor.getDate() + 1);
-      }
-    });
 
     const records = await Attendance.find({
       userId: employee._id,

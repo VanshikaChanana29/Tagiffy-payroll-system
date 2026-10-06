@@ -10,7 +10,7 @@ const {
   splitWorkingDaysByMonth,
   getLeaveBalance,
   withLeaveBalances,
-  checkEarnedAvailability,
+  allocateEarned,
 } = require('../utils/leavePolicy');
 const { parseISO, isAfter, format } = require('date-fns');
 
@@ -90,18 +90,18 @@ const applyLeave = async (req, res) => {
 
     // Earned leave lapses monthly, so each month the request touches is checked
     // against that month's own credit. Pending requests already hold their days.
-    const monthlyDays = splitWorkingDaysByMonth(
+    // Anything beyond the credit is still allowed, as unpaid days.
+    let monthlyDays = splitWorkingDaysByMonth(
       startDate,
       endDate,
       settings,
       holidayMap,
       req.user.weeklyOffDays
     );
+    let unpaidDays = 0;
+    let excessNote = null;
     if (leaveType === 'Paid') {
-      const shortfall = await checkEarnedAvailability(user, monthlyDays);
-      if (shortfall) {
-        return res.status(400).json({ success: false, message: shortfall });
-      }
+      ({ monthlyDays, unpaidDays, note: excessNote } = await allocateEarned(user, monthlyDays));
     }
 
     // Check for overlapping active leaves (Pending or Approved). WFH counts too:
@@ -129,6 +129,7 @@ const applyLeave = async (req, res) => {
       daysCount,
       calendarDays,
       monthlyDays,
+      unpaidDays,
       reason: reason.trim(),
       status: 'Pending',
     });
@@ -139,17 +140,21 @@ const applyLeave = async (req, res) => {
       recipients: await getEscalationRecipientIds(user),
       type: 'leave_applied',
       title: isWfh ? 'New Work From Home request' : 'New leave request',
-      message: `${user.name} applied for ${daysCount} day(s) of ${requestLabel(leaveType)} (${startDate} to ${endDate}).`,
+      message: `${user.name} applied for ${daysCount} day(s) of ${requestLabel(leaveType)} (${startDate} to ${endDate})${
+        unpaidDays ? `, ${unpaidDays} of them beyond the Earned balance (unpaid)` : ''
+      }.`,
       relatedEntity: { kind: 'Leave', id: newLeave._id },
     });
 
+    const submitted = isWfh
+      ? `Work From Home request for ${daysCount} working day(s) submitted for approval`
+      : calendarDays === daysCount
+      ? `Leave application for ${daysCount} day(s) submitted successfully`
+      : `Leave submitted: ${calendarDays} calendar days, ${daysCount} working day(s) charged.`;
+
     res.status(201).json({
       success: true,
-      message: isWfh
-        ? `Work From Home request for ${daysCount} working day(s) submitted for approval`
-        : calendarDays === daysCount
-        ? `Leave application for ${daysCount} day(s) submitted successfully`
-        : `Leave submitted: ${calendarDays} calendar days, ${daysCount} working day(s) charged.`,
+      message: excessNote ? `${submitted} ${excessNote}` : submitted,
       leave: newLeave,
     });
   } catch (error) {
@@ -339,18 +344,20 @@ const updateLeaveStatus = async (req, res) => {
     }
 
     // Balances are computed from the leaves themselves, so approving or
-    // rejecting only changes status. Re-check earned leave on approval in case
-    // the department's monthly credit was lowered since the request was made.
+    // rejecting only changes status. On approval, re-split earned leave against
+    // the credit as it stands now (other requests may have been approved or
+    // rejected since): days beyond it are approved as unpaid, never refused.
+    let excessNote = null;
     if (status === 'Approved' && previousStatus !== 'Approved' && leave.leaveType === 'Paid') {
       const monthlyDays = leave.monthlyDays?.length
-        ? leave.monthlyDays
+        ? leave.monthlyDays.map(({ month, days }) => ({ month, days }))
         : [{ month: leave.startDate.slice(0, 7), days: leave.daysCount }];
-      const shortfall = await checkEarnedAvailability(employee, monthlyDays, {
+      const allocation = await allocateEarned(employee, monthlyDays, {
         excludeLeaveId: leave._id,
       });
-      if (shortfall) {
-        return res.status(400).json({ success: false, message: `Cannot approve. ${shortfall}` });
-      }
+      leave.monthlyDays = allocation.monthlyDays;
+      leave.unpaidDays = allocation.unpaidDays;
+      excessNote = allocation.note;
     }
 
     // Update leave request
@@ -367,14 +374,16 @@ const updateLeaveStatus = async (req, res) => {
       title: `${leave.leaveType === 'WFH' ? 'Work From Home' : 'Leave'} ${status.toLowerCase()}`,
       message:
         status === 'Approved'
-          ? `Your ${requestLabel(leave.leaveType)} from ${leave.startDate} to ${leave.endDate} has been approved.`
+          ? `Your ${requestLabel(leave.leaveType)} from ${leave.startDate} to ${leave.endDate} has been approved.${excessNote ? ` ${excessNote}` : ''}`
           : `Your ${requestLabel(leave.leaveType)} from ${leave.startDate} to ${leave.endDate} was rejected: ${adminComment.trim()}`,
       relatedEntity: { kind: 'Leave', id: leave._id },
     });
 
     res.status(200).json({
       success: true,
-      message: `Leave request for ${employee.name} has been ${status.toLowerCase()} successfully`,
+      message: `Leave request for ${employee.name} has been ${status.toLowerCase()} successfully${
+        excessNote ? `. ${excessNote}` : ''
+      }`,
       leave,
       updatedBalance: await getLeaveBalance(employee),
     });

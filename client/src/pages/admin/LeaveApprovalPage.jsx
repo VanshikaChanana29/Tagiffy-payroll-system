@@ -312,6 +312,11 @@ const LeaveApprovalPage = () => {
                           left this month
                         </div>
                       )}
+                      {l.leaveType === 'Paid' && l.unpaidDays > 0 && (
+                        <div className="text-[10px] font-semibold text-amber-600 dark:text-amber-400 mt-0.5">
+                          {l.unpaidDays}d unpaid (salary deducted)
+                        </div>
+                      )}
                     </td>
 
                     {/* Date span */}
@@ -416,8 +421,9 @@ const LeaveApprovalPage = () => {
                   <div className="text-[11px] text-emerald-600 dark:text-emerald-400 pt-1 border-t border-slate-200 dark:border-slate-800 flex items-center gap-1">
                     <CheckCircle2 className="w-3.5 h-3.5" />
                     <span>
-                      These {selectedLeave.daysCount} days are already held from the employee's monthly
-                      Earned leave; approving confirms them.
+                      {selectedLeave.unpaidDays > 0
+                        ? `${selectedLeave.daysCount - selectedLeave.unpaidDays} day(s) come from Earned leave; the other ${selectedLeave.unpaidDays} exceed the balance and will be deducted from salary.`
+                        : `These ${selectedLeave.daysCount} days are already held from the employee's monthly Earned leave; approving confirms them.`}
                     </span>
                   </div>
                 )}

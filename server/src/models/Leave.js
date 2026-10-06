@@ -40,16 +40,24 @@ const leaveSchema = new mongoose.Schema(
     },
     // daysCount split by month, e.g. [{ month: '2026-10', days: 1 }, { month:
     // '2026-11', days: 2 }]. Earned leave lapses monthly, so a request spanning
-    // a month end is charged against each month's own credit.
+    // a month end is charged against each month's own credit. For Earned leave,
+    // `unpaidDays` is the part of that month's days beyond the remaining credit:
+    // it is still granted, but payroll charges it as loss of pay.
     monthlyDays: {
       type: [
         {
           _id: false,
           month: { type: String, required: true }, // YYYY-MM
           days: { type: Number, required: true },
+          unpaidDays: { type: Number, default: 0 },
         },
       ],
       default: [],
+    },
+    // Total of monthlyDays[].unpaidDays, kept for display.
+    unpaidDays: {
+      type: Number,
+      default: 0,
     },
     reason: {
       type: String,
