@@ -23,18 +23,23 @@ app.use(
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Profile photos are served as plain files so <img> tags can load them without
+// Profile photos are served without auth so <img> tags can load them without
 // an Authorization header. Filenames carry a long random suffix, so they are not
-// enumerable. Employee documents are NOT served this way — they stay behind the
-// authenticated download route.
+// enumerable. They are streamed from file storage (R2 in production). Employee
+// documents are NOT served this way — they stay behind the authenticated
+// download route.
 const express_static_path = require('path');
-app.use(
-  '/api/files/avatars',
-  express.static(express_static_path.resolve(__dirname, '../uploads/avatars'), {
-    maxAge: '1d',
-    fallthrough: false,
-  })
-);
+const { sendStoredFile } = require('./utils/fileStorage');
+const { AVATARS_FOLDER } = require('./middleware/upload');
+app.get('/api/files/avatars/:name', async (req, res) => {
+  try {
+    const sent = await sendStoredFile(res, AVATARS_FOLDER, req.params.name, { cacheSeconds: 86400 });
+    if (!sent) res.status(404).end();
+  } catch (err) {
+    console.error(`Avatar fetch failed: ${err.message}`);
+    if (!res.headersSent) res.status(500).end();
+  }
+});
 
 // Serve the built React client (client/dist) once it exists, so the API and
 // the frontend can run as a single process/port in production instead of a

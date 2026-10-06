@@ -14,6 +14,16 @@ services:
         value: "false"
       - key: MONGODB_URI
         sync: false
+      # Uploaded files (documents, avatars, receipts) go to a private Cloudflare
+      # R2 bucket — Render's own disk is wiped on every deploy/restart.
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET
+        value: dayflow-hrms-files
       - key: JWT_SECRET
         generateValue: true
       - key: JWT_EXPIRES_IN

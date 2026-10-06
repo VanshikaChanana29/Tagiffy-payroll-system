@@ -1,15 +1,14 @@
-const fs = require('fs');
-const path = require('path');
 const User = require('../models/User');
 const Department = require('../models/Department');
 const Designation = require('../models/Designation');
 const {
-  UPLOAD_DIR,
+  DOCUMENTS_FOLDER,
   formatFileSize,
   isRealPdf,
-  AVATAR_DIR,
+  AVATARS_FOLDER,
   isRealImage,
 } = require('../middleware/upload');
+const { saveFile, deleteFile, sendStoredFile } = require('../utils/fileStorage');
 const { buildInitialsAvatar } = require('../utils/initialsAvatar');
 const OrgSettings = require('../models/OrgSettings');
 const { buildSalaryBreakup } = require('../utils/salaryStructure');
@@ -74,15 +73,9 @@ const normalizeCustomShift = (customShift) => {
 const canAccessAssets = canAccessDocuments;
 
 // Remove the file backing a document, ignoring a file that is already gone.
+// Fire-and-forget: a failed cleanup is logged, never surfaced to the user.
 const removeStoredFile = (storedName) => {
-  if (!storedName) return;
-  try {
-    fs.unlinkSync(path.join(UPLOAD_DIR, storedName));
-  } catch (err) {
-    if (err.code !== 'ENOENT') {
-      console.error(`Failed to remove stored file ${storedName}: ${err.message}`);
-    }
-  }
+  deleteFile(DOCUMENTS_FOLDER, storedName);
 };
 
 // Validate that department/designation reference existing master data records.
@@ -1050,7 +1043,6 @@ const addUserDocument = async (req, res) => {
     const { id } = req.params;
 
     if (!canAccessDocuments(req, id)) {
-      if (req.file) removeStoredFile(req.file.filename);
       return res.status(403).json({
         success: false,
         message: 'Forbidden. You can only add documents to your own profile.',
@@ -1066,7 +1058,6 @@ const addUserDocument = async (req, res) => {
 
     const { name, type } = req.body;
     if (!type) {
-      removeStoredFile(req.file.filename);
       return res.status(400).json({
         success: false,
         message: 'Please select a document type',
@@ -1074,8 +1065,7 @@ const addUserDocument = async (req, res) => {
     }
 
     // Confirm the bytes really are a PDF, not just a file named ".pdf".
-    if (!isRealPdf(path.join(UPLOAD_DIR, req.file.filename))) {
-      removeStoredFile(req.file.filename);
+    if (!isRealPdf(req.file.buffer)) {
       return res.status(400).json({
         success: false,
         message: 'That file is not a valid PDF. Please upload a real PDF document.',
@@ -1084,9 +1074,10 @@ const addUserDocument = async (req, res) => {
 
     const employee = await User.findById(id);
     if (!employee) {
-      removeStoredFile(req.file.filename);
       return res.status(404).json({ success: false, message: 'Employee not found' });
     }
+
+    await saveFile(DOCUMENTS_FOLDER, req.file.filename, req.file.buffer, req.file.mimetype);
 
     // Every upload starts unverified, including HR's own, so that verification is
     // always a deliberate, recorded action rather than a side effect of uploading.
@@ -1166,18 +1157,19 @@ const downloadUserDocument = async (req, res) => {
       });
     }
 
-    const filePath = path.join(UPLOAD_DIR, doc.storedName);
-    if (!fs.existsSync(filePath)) {
+    const sent = await sendStoredFile(res, DOCUMENTS_FOLDER, doc.storedName, {
+      contentType: doc.mimeType || 'application/pdf',
+      downloadName: doc.originalName || doc.name,
+    });
+    if (!sent) {
       return res.status(404).json({
         success: false,
-        message: 'The stored file is missing from the server.',
+        message: 'The stored file is missing from the server. Please re-upload the document.',
       });
     }
-
-    res.setHeader('Content-Type', doc.mimeType || 'application/pdf');
-    res.download(filePath, doc.originalName || doc.name);
   } catch (error) {
     console.error('Download Document Error:', error);
+    if (res.headersSent) return res.end();
     res.status(500).json({
       success: false,
       message: 'Failed to download document',
@@ -1510,13 +1502,9 @@ const deleteUserAsset = async (req, res) => {
 // @route   POST /api/users/:id/avatar
 // @access  Private (Self or Admin)
 const uploadUserAvatar = async (req, res) => {
+  // Only matters once the photo has been written to storage.
   const removeUploaded = () => {
-    if (!req.file) return;
-    try {
-      fs.unlinkSync(path.join(AVATAR_DIR, req.file.filename));
-    } catch (err) {
-      if (err.code !== 'ENOENT') console.error(`Avatar cleanup failed: ${err.message}`);
-    }
+    if (req.file) deleteFile(AVATARS_FOLDER, req.file.filename);
   };
 
   try {
@@ -1525,7 +1513,6 @@ const uploadUserAvatar = async (req, res) => {
     const isAdmin = isAdminRole(req.user.role);
 
     if (!isSelf && !isAdmin) {
-      removeUploaded();
       return res.status(403).json({
         success: false,
         message: 'You can only change your own profile photo.',
@@ -1539,8 +1526,7 @@ const uploadUserAvatar = async (req, res) => {
       });
     }
 
-    if (!isRealImage(path.join(AVATAR_DIR, req.file.filename))) {
-      removeUploaded();
+    if (!isRealImage(req.file.buffer)) {
       return res.status(400).json({
         success: false,
         message: 'That file is not a valid image. Please choose a JPG, PNG, or WEBP photo.',
@@ -1549,19 +1535,14 @@ const uploadUserAvatar = async (req, res) => {
 
     const employee = await User.findById(id);
     if (!employee) {
-      removeUploaded();
       return res.status(404).json({ success: false, message: 'Employee not found' });
     }
 
+    await saveFile(AVATARS_FOLDER, req.file.filename, req.file.buffer, req.file.mimetype);
+
     // Delete the previous uploaded photo so old files do not pile up. Generated
-    // initials avatars are data URIs, so there is nothing on disk to remove.
-    if (employee.avatarFile) {
-      try {
-        fs.unlinkSync(path.join(AVATAR_DIR, employee.avatarFile));
-      } catch (err) {
-        if (err.code !== 'ENOENT') console.error(`Old avatar cleanup failed: ${err.message}`);
-      }
-    }
+    // initials avatars are data URIs, so there is nothing stored to remove.
+    if (employee.avatarFile) deleteFile(AVATARS_FOLDER, employee.avatarFile);
 
     employee.avatarFile = req.file.filename;
     employee.avatar = `/api/files/avatars/${req.file.filename}`;
@@ -1605,13 +1586,7 @@ const resetUserAvatar = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Employee not found' });
     }
 
-    if (employee.avatarFile) {
-      try {
-        fs.unlinkSync(path.join(AVATAR_DIR, employee.avatarFile));
-      } catch (err) {
-        if (err.code !== 'ENOENT') console.error(`Avatar cleanup failed: ${err.message}`);
-      }
-    }
+    if (employee.avatarFile) deleteFile(AVATARS_FOLDER, employee.avatarFile);
 
     employee.avatarFile = '';
     employee.avatar = buildInitialsAvatar(employee.name, employee.email);

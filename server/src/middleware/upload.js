@@ -1,21 +1,17 @@
 const path = require('path');
-const fs = require('fs');
 const multer = require('multer');
 
-// Real files live on disk, outside the database, in a folder the API owns.
-const UPLOAD_DIR = process.env.UPLOAD_DIR || path.resolve(__dirname, '../../uploads/documents');
-fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+// Uploads are held in memory, checked, then written to file storage (R2 in
+// production, local disk in dev) by the controller — see utils/fileStorage.js.
+// Folder names inside that storage:
+const DOCUMENTS_FOLDER = 'documents';
+const AVATARS_FOLDER = 'avatars';
+const RECEIPTS_FOLDER = 'receipts';
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, UPLOAD_DIR),
-  filename: (req, file, cb) => {
-    // Never trust the uploaded filename on disk — generate our own.
-    const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-    cb(null, `${req.params.id}-${unique}.pdf`);
-  },
-});
+// Never trust the uploaded filename — the stored name is always our own.
+const uniqueSuffix = (range = 1e9) => `${Date.now()}-${Math.round(Math.random() * range)}`;
 
 // PDFs only: check the declared MIME type and the extension.
 const fileFilter = (req, file, cb) => {
@@ -29,7 +25,7 @@ const fileFilter = (req, file, cb) => {
 };
 
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
   fileFilter,
   limits: { fileSize: MAX_FILE_BYTES, files: 1 },
 });
@@ -44,6 +40,7 @@ const uploadDocument = (req, res, next) => {
           : err.message || 'File upload failed';
       return res.status(400).json({ success: false, message });
     }
+    if (req.file) req.file.filename = `${req.params.id}-${uniqueSuffix()}.pdf`;
     next();
   });
 };
@@ -51,25 +48,12 @@ const uploadDocument = (req, res, next) => {
 
 // --- Profile photos -------------------------------------------------------
 
-const AVATAR_DIR = process.env.AVATAR_DIR || path.resolve(__dirname, '../../uploads/avatars');
-fs.mkdirSync(AVATAR_DIR, { recursive: true });
-
 const MAX_AVATAR_BYTES = 3 * 1024 * 1024; // 3 MB
 const ALLOWED_IMAGE_TYPES = {
   'image/jpeg': '.jpg',
   'image/png': '.png',
   'image/webp': '.webp',
 };
-
-const avatarStorage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, AVATAR_DIR),
-  filename: (req, file, cb) => {
-    const ext = ALLOWED_IMAGE_TYPES[file.mimetype] || '.jpg';
-    // Long random suffix: these are served without auth, so the path must not be guessable.
-    const unique = `${Date.now()}-${Math.round(Math.random() * 1e12)}`;
-    cb(null, `${req.params.id}-${unique}${ext}`);
-  },
-});
 
 const avatarFilter = (req, file, cb) => {
   if (!ALLOWED_IMAGE_TYPES[file.mimetype]) {
@@ -79,7 +63,7 @@ const avatarFilter = (req, file, cb) => {
 };
 
 const avatarUpload = multer({
-  storage: avatarStorage,
+  storage: multer.memoryStorage(),
   fileFilter: avatarFilter,
   limits: { fileSize: MAX_AVATAR_BYTES, files: 1 },
 });
@@ -93,32 +77,28 @@ const uploadAvatar = (req, res, next) => {
           : err.message || 'Photo upload failed';
       return res.status(400).json({ success: false, message });
     }
+    if (req.file) {
+      const ext = ALLOWED_IMAGE_TYPES[req.file.mimetype] || '.jpg';
+      // Long random suffix: these are served without auth, so the path must not be guessable.
+      req.file.filename = `${req.params.id}-${uniqueSuffix(1e12)}${ext}`;
+    }
     next();
   });
 };
 
 // Magic bytes for the image formats we accept, so a renamed file is rejected.
-const isRealImage = (absolutePath) => {
-  let fd;
-  try {
-    fd = fs.openSync(absolutePath, 'r');
-    const head = Buffer.alloc(12);
-    const read = fs.readSync(fd, head, 0, 12, 0);
-    if (read < 12) return false;
+const isRealImage = (buffer) => {
+  if (!Buffer.isBuffer(buffer) || buffer.length < 12) return false;
+  const head = buffer.subarray(0, 12);
 
-    const isJpg = head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff;
+  const isJpg = head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff;
     const isPng =
       head[0] === 0x89 && head[1] === 0x50 && head[2] === 0x4e && head[3] === 0x47;
     const isWebp =
       head.subarray(0, 4).toString('latin1') === 'RIFF' &&
       head.subarray(8, 12).toString('latin1') === 'WEBP';
 
-    return isJpg || isPng || isWebp;
-  } catch {
-    return false;
-  } finally {
-    if (fd !== undefined) fs.closeSync(fd);
-  }
+  return isJpg || isPng || isWebp;
 };
 
 // Human-readable size for the UI, derived from the real file — never typed by hand.
@@ -132,19 +112,8 @@ const formatFileSize = (bytes) => {
 // The browser derives the MIME type from the file extension, so renaming
 // invoice.txt to invoice.pdf passes that check. Every real PDF starts with the
 // bytes "%PDF-", so verify the content itself before accepting the file.
-const isRealPdf = (absolutePath) => {
-  let fd;
-  try {
-    fd = fs.openSync(absolutePath, 'r');
-    const header = Buffer.alloc(5);
-    const bytesRead = fs.readSync(fd, header, 0, 5, 0);
-    return bytesRead === 5 && header.toString('latin1') === '%PDF-';
-  } catch {
-    return false;
-  } finally {
-    if (fd !== undefined) fs.closeSync(fd);
-  }
-};
+const isRealPdf = (buffer) =>
+  Buffer.isBuffer(buffer) && buffer.length >= 5 && buffer.subarray(0, 5).toString('latin1') === '%PDF-';
 
 // --- Bulk employee sheet (Excel/CSV) --------------------------------------
 
@@ -183,22 +152,8 @@ const uploadEmployeeSheet = (req, res, next) => {
 
 // --- Reimbursement receipts (PDF or photo of a bill) ----------------------
 
-const RECEIPT_DIR = process.env.RECEIPT_DIR || path.resolve(__dirname, '../../uploads/receipts');
-fs.mkdirSync(RECEIPT_DIR, { recursive: true });
-
 const MAX_RECEIPT_BYTES = 5 * 1024 * 1024; // 5 MB
 const ALLOWED_RECEIPT_TYPES = { ...ALLOWED_IMAGE_TYPES, 'application/pdf': '.pdf' };
-
-const receiptStorage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, RECEIPT_DIR),
-  filename: (req, file, cb) => {
-    // No owning record exists yet at upload time (it's created in the same
-    // request), so the name is just a unique token, not keyed to an id.
-    const ext = ALLOWED_RECEIPT_TYPES[file.mimetype] || path.extname(file.originalname) || '.bin';
-    const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-    cb(null, `receipt-${unique}${ext}`);
-  },
-});
 
 const receiptFilter = (req, file, cb) => {
   if (!ALLOWED_RECEIPT_TYPES[file.mimetype]) {
@@ -208,7 +163,7 @@ const receiptFilter = (req, file, cb) => {
 };
 
 const receiptUpload = multer({
-  storage: receiptStorage,
+  storage: multer.memoryStorage(),
   fileFilter: receiptFilter,
   limits: { fileSize: MAX_RECEIPT_BYTES, files: 1 },
 });
@@ -223,22 +178,28 @@ const uploadReceipt = (req, res, next) => {
           : err.message || 'Receipt upload failed';
       return res.status(400).json({ success: false, message });
     }
+    if (req.file) {
+      // No owning record exists yet at upload time (it's created in the same
+      // request), so the name is just a unique token, not keyed to an id.
+      const ext = ALLOWED_RECEIPT_TYPES[req.file.mimetype] || path.extname(req.file.originalname) || '.bin';
+      req.file.filename = `receipt-${uniqueSuffix()}${ext}`;
+    }
     next();
   });
 };
 
 module.exports = {
   uploadDocument,
-  UPLOAD_DIR,
+  DOCUMENTS_FOLDER,
   MAX_FILE_BYTES,
   formatFileSize,
   isRealPdf,
   uploadAvatar,
-  AVATAR_DIR,
+  AVATARS_FOLDER,
   MAX_AVATAR_BYTES,
   isRealImage,
   uploadEmployeeSheet,
   MAX_SHEET_BYTES,
   uploadReceipt,
-  RECEIPT_DIR,
+  RECEIPTS_FOLDER,
 };

@@ -1,28 +1,20 @@
-const fs = require('fs');
-const path = require('path');
 const Reimbursement = require('../models/Reimbursement');
 const User = require('../models/User');
-const { RECEIPT_DIR, isRealPdf, isRealImage } = require('../middleware/upload');
+const { RECEIPTS_FOLDER, isRealPdf, isRealImage } = require('../middleware/upload');
+const { saveFile, deleteFile, sendStoredFile } = require('../utils/fileStorage');
 const { getVisibleUserIds, canManageEmployee } = require('../utils/teamScope');
 const { isAdminRole } = require('../utils/roles');
 const { notify, getEscalationRecipientIds } = require('../utils/notificationService');
 
 // Remove the file backing a receipt, ignoring a file that is already gone.
 const removeStoredReceipt = (storedName) => {
-  if (!storedName) return;
-  try {
-    fs.unlinkSync(path.join(RECEIPT_DIR, storedName));
-  } catch (err) {
-    if (err.code !== 'ENOENT') {
-      console.error(`Failed to remove stored receipt ${storedName}: ${err.message}`);
-    }
-  }
+  deleteFile(RECEIPTS_FOLDER, storedName);
 };
 
 // Confirms the uploaded bytes really are what the extension claims, not just a
 // renamed file — same defense already used for user documents and avatars.
-const isRealReceiptFile = (absolutePath, mimeType) =>
-  mimeType === 'application/pdf' ? isRealPdf(absolutePath) : isRealImage(absolutePath);
+const isRealReceiptFile = (buffer, mimeType) =>
+  mimeType === 'application/pdf' ? isRealPdf(buffer) : isRealImage(buffer);
 
 // @desc    Submit a new reimbursement request
 // @route   POST /api/reimbursements
@@ -33,7 +25,6 @@ const submitReimbursement = async (req, res) => {
     const { category, amount, expenseDate, description } = req.body;
 
     if (!category || !amount || !expenseDate || !description) {
-      if (req.file) removeStoredReceipt(req.file.filename);
       return res.status(400).json({
         success: false,
         message: 'Please provide category, amount, expense date, and description',
@@ -42,7 +33,6 @@ const submitReimbursement = async (req, res) => {
 
     const amountNum = Number(amount);
     if (!(amountNum > 0)) {
-      if (req.file) removeStoredReceipt(req.file.filename);
       return res.status(400).json({
         success: false,
         message: 'Amount must be greater than 0',
@@ -51,8 +41,7 @@ const submitReimbursement = async (req, res) => {
 
     let receipt;
     if (req.file) {
-      if (!isRealReceiptFile(path.join(RECEIPT_DIR, req.file.filename), req.file.mimetype)) {
-        removeStoredReceipt(req.file.filename);
+      if (!isRealReceiptFile(req.file.buffer, req.file.mimetype)) {
         return res.status(400).json({
           success: false,
           message: 'That file does not look like a valid PDF or image. Please try another file.',
@@ -69,8 +58,11 @@ const submitReimbursement = async (req, res) => {
 
     const user = await User.findById(userId);
     if (!user) {
-      if (req.file) removeStoredReceipt(req.file.filename);
       return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    if (req.file) {
+      await saveFile(RECEIPTS_FOLDER, req.file.filename, req.file.buffer, req.file.mimetype);
     }
 
     const newReimbursement = new Reimbursement({
@@ -377,15 +369,16 @@ const downloadReimbursementReceipt = async (req, res) => {
       return res.status(404).json({ success: false, message: 'No receipt was attached to this request.' });
     }
 
-    const filePath = path.join(RECEIPT_DIR, reimbursement.receipt.storedName);
-    if (!fs.existsSync(filePath)) {
+    const sent = await sendStoredFile(res, RECEIPTS_FOLDER, reimbursement.receipt.storedName, {
+      contentType: reimbursement.receipt.mimeType || 'application/octet-stream',
+      downloadName: reimbursement.receipt.originalName || 'receipt',
+    });
+    if (!sent) {
       return res.status(404).json({ success: false, message: 'The stored receipt is missing from the server.' });
     }
-
-    res.setHeader('Content-Type', reimbursement.receipt.mimeType || 'application/octet-stream');
-    res.download(filePath, reimbursement.receipt.originalName || 'receipt');
   } catch (error) {
     console.error('Download Reimbursement Receipt Error:', error);
+    if (res.headersSent) return res.end();
     res.status(500).json({
       success: false,
       message: 'Failed to download receipt',
