@@ -1,41 +1,52 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
-  ChevronDown,
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
-  RotateCcw,
   Clock,
   Calendar,
   CheckCircle2,
   AlertCircle,
   Building,
   Laptop,
-  Search,
-  Filter,
   CalendarDays,
   Edit3,
   X,
   Save,
   MapPinOff,
+  Users,
+  UserX,
+  MapPin,
 } from 'lucide-react';
 import api from '../../api/client';
 import RegularizationApprovals from '../../components/admin/RegularizationApprovals';
 import useDepartments from '../../hooks/useDepartments';
+import useOfficeLocations from '../../hooks/useOfficeLocations';
 import { useToast } from '../../context/ToastContext';
 import demoAvatars from '../../utils/avatars';
 import { format } from 'date-fns';
 import { formatHours } from '../../utils/formatHours';
 import Tooltip from '../../components/common/Tooltip';
+import Pagination, { usePagination } from '../../components/common/Pagination';
+import FilterBar from '../../components/common/FilterBar';
 
 const AllAttendancePage = () => {
   const departments = useDepartments();
   const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [department, setDepartment] = useState('All');
+  const officeLocations = useOfficeLocations();
+  const [officeFilter, setOfficeFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState('All');
   const [search, setSearch] = useState('');
   const [records, setRecords] = useState([]);
-  const [stats, setStats] = useState({ totalPresent: 0, totalHalfDay: 0, totalLeave: 0 });
+  const [stats, setStats] = useState({
+    totalEmployees: 0,
+    totalPresent: 0,
+    totalHalfDay: 0,
+    totalLeave: 0,
+    totalNotPunchedIn: 0,
+    totalAbsent: 0,
+  });
   const [loading, setLoading] = useState(true);
 
   // Client-side column filters
@@ -52,9 +63,7 @@ const AllAttendancePage = () => {
   const [sortDir, setSortDir] = useState('asc');
 
   // Filters menu: which filters the user has turned on
-  const [filterMenuOpen, setFilterMenuOpen] = useState(false);
   const [enabledFilters, setEnabledFilters] = useState([]);
-  const filterMenuRef = useRef(null);
 
   // Edit record modal state
   const [selectedRecord, setSelectedRecord] = useState(null);
@@ -68,6 +77,7 @@ const AllAttendancePage = () => {
       setLoading(true);
       const params = { date: selectedDate };
       if (department !== 'All') params.department = department;
+      if (officeFilter !== 'All') params.officeLocation = officeFilter;
       if (statusFilter !== 'All') params.status = statusFilter;
       if (search) params.search = search;
 
@@ -85,7 +95,7 @@ const AllAttendancePage = () => {
 
   useEffect(() => {
     fetchCompanyAttendance();
-  }, [selectedDate, department, statusFilter]);
+  }, [selectedDate, department, officeFilter, statusFilter]);
 
   // Debounced search
   useEffect(() => {
@@ -201,6 +211,28 @@ const AllAttendancePage = () => {
     sortDir,
   ]);
 
+  // Filters and sorting above cover the whole roll call; paging only picks
+  // the slice on screen and resets to page 1 when any of them change.
+  const pagination = usePagination(
+    visibleRecords,
+    [
+      selectedDate,
+      search,
+      department,
+      officeFilter,
+      statusFilter,
+      designationFilter,
+      checkInFrom,
+      checkInTo,
+      locationFilter,
+      checkOutFilter,
+      hoursFilter,
+      workModeFilter,
+      sortBy,
+      sortDir,
+    ].join('|')
+  );
+
   const selectOptions = (pairs) => pairs.map(([value, label]) => ({ value, label: label || value }));
 
   // Every filter the "Filters" menu can turn on; `isSet` says whether it is narrowing the list
@@ -214,6 +246,23 @@ const AllAttendancePage = () => {
       set: setDepartment,
       reset: () => setDepartment('All'),
       options: selectOptions([['All', 'All Departments'], ...departments.map((d) => [d.name])]),
+    },
+    {
+      key: 'office',
+      label: 'Office Location',
+      value: officeFilter,
+      isSet: officeFilter !== 'All',
+      display:
+        officeFilter === 'none'
+          ? 'Not assigned'
+          : officeLocations.find((o) => o._id === officeFilter)?.name || 'Office',
+      set: setOfficeFilter,
+      reset: () => setOfficeFilter('All'),
+      options: selectOptions([
+        ['All', 'All Offices'],
+        ...officeLocations.map((o) => [o._id, o.name]),
+        ['none', 'Not assigned'],
+      ]),
     },
     {
       key: 'designation',
@@ -234,6 +283,25 @@ const AllAttendancePage = () => {
         setCheckInFrom('');
         setCheckInTo('');
       },
+      render: () => (
+        <div className="flex items-center gap-1.5">
+          <input
+            type="time"
+            value={checkInFrom}
+            onChange={(e) => setCheckInFrom(e.target.value)}
+            className="theme-input text-xs flex-1 min-w-0"
+            aria-label="Check-in from"
+          />
+          <span className="text-slate-400">–</span>
+          <input
+            type="time"
+            value={checkInTo}
+            onChange={(e) => setCheckInTo(e.target.value)}
+            className="theme-input text-xs flex-1 min-w-0"
+            aria-label="Check-in to"
+          />
+        </div>
+      ),
     },
     {
       key: 'location',
@@ -297,44 +365,19 @@ const AllAttendancePage = () => {
       display: statusFilter,
       set: setStatusFilter,
       reset: () => setStatusFilter('All'),
-      options: selectOptions([['All', 'All Statuses'], ['Present'], ['Half-day'], ['Leave'], ['Absent']]),
+      options: selectOptions([
+        ['All', 'All Statuses'],
+        ['Present'],
+        ['Half-day'],
+        ['Leave', 'On Leave'],
+        ['Not Punched In'],
+        ['Absent'],
+        ['Holiday'],
+        ['Weekly Off'],
+        ['Not Tracked'],
+      ]),
     },
   ];
-
-  const appliedFilters = filterDefs.filter((f) => f.isSet);
-  const hasActiveFilters = search || appliedFilters.length > 0 || sortBy;
-
-  const removeFilter = (def) => {
-    def.reset();
-    setEnabledFilters((keys) => keys.filter((k) => k !== def.key));
-  };
-
-  const toggleFilter = (def) => {
-    if (enabledFilters.includes(def.key)) removeFilter(def);
-    else setEnabledFilters((keys) => [...keys, def.key]);
-  };
-
-  const clearAllFilters = () => {
-    filterDefs.forEach((f) => f.reset());
-    setEnabledFilters([]);
-  };
-
-  const resetFilters = () => {
-    setSearch('');
-    clearAllFilters();
-    setSortBy('');
-    setSortDir('asc');
-  };
-
-  // Close the filter menu on outside click
-  useEffect(() => {
-    if (!filterMenuOpen) return;
-    const onClick = (e) => {
-      if (filterMenuRef.current && !filterMenuRef.current.contains(e.target)) setFilterMenuOpen(false);
-    };
-    document.addEventListener('mousedown', onClick);
-    return () => document.removeEventListener('mousedown', onClick);
-  }, [filterMenuOpen]);
 
   const handleSort = (field) => {
     if (sortBy === field) {
@@ -382,7 +425,22 @@ const AllAttendancePage = () => {
       case 'Leave':
         return (
           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-brand-500/15 text-brand-700 dark:text-brand-300 border border-brand-500/25">
-            <CalendarDays className="w-3 h-3 text-brand-600 dark:text-brand-400" /> Leave
+            <CalendarDays className="w-3 h-3 text-brand-600 dark:text-brand-400" /> On Leave
+          </span>
+        );
+      case 'Not Punched In':
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-orange-500/15 text-orange-700 dark:text-orange-300 border border-orange-500/25">
+            <UserX className="w-3 h-3 text-orange-600 dark:text-orange-400" /> Not Punched In
+          </span>
+        );
+      case 'Holiday':
+      case 'Weekly Off':
+      case 'Not Tracked':
+      case 'Upcoming':
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-500/15 text-slate-700 dark:text-slate-300 border border-slate-500/25">
+            <Calendar className="w-3 h-3" /> {status}
           </span>
         );
       default:
@@ -421,203 +479,103 @@ const AllAttendancePage = () => {
       </div>
 
       {/* Metric Counters */}
-      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-        <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex items-center justify-between transition-colors">
-          <div>
-            <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold uppercase">Total Recorded</span>
-            <div className="text-2xl font-black text-slate-900 dark:text-white mt-1">{records.length}</div>
-          </div>
-          <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center justify-center">
-            <Clock className="w-5 h-5" />
-          </div>
-        </div>
-
-        <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex items-center justify-between transition-colors">
-          <div>
-            <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold uppercase">Present</span>
-            <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1">
-              {stats.totalPresent}
-            </div>
-          </div>
-          <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
-            <CheckCircle2 className="w-5 h-5" />
-          </div>
-        </div>
-
-        <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex items-center justify-between transition-colors">
-          <div>
-            <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold uppercase">Half-Day</span>
-            <div className="text-2xl font-black text-amber-600 dark:text-amber-400 mt-1">
-              {stats.totalHalfDay}
-            </div>
-          </div>
-          <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center">
-            <Clock className="w-5 h-5" />
-          </div>
-        </div>
-
-        <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex items-center justify-between transition-colors">
-          <div>
-            <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold uppercase">On Leave</span>
-            <div className="text-2xl font-black text-brand-600 dark:text-brand-400 mt-1">
-              {stats.totalLeave}
-            </div>
-          </div>
-          <div className="w-10 h-10 rounded-xl bg-brand-500/10 text-brand-600 dark:text-brand-400 flex items-center justify-center">
-            <CalendarDays className="w-5 h-5" />
-          </div>
-        </div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+        {[
+          {
+            label: 'Total Employees',
+            value: stats.totalEmployees ?? records.length,
+            sub: `${stats.totalPunchedIn ?? 0} punched in`,
+            icon: Users,
+            tone: 'text-slate-900 dark:text-white',
+            iconTone: 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300',
+            filter: 'All',
+          },
+          {
+            label: 'Present',
+            value: stats.totalPresent,
+            icon: CheckCircle2,
+            tone: 'text-emerald-600 dark:text-emerald-400',
+            iconTone: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+            filter: 'Present',
+          },
+          {
+            label: 'Half-Day',
+            value: stats.totalHalfDay,
+            icon: Clock,
+            tone: 'text-amber-600 dark:text-amber-400',
+            iconTone: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+            filter: 'Half-day',
+          },
+          {
+            label: 'On Leave',
+            value: stats.totalLeave,
+            icon: CalendarDays,
+            tone: 'text-brand-600 dark:text-brand-400',
+            iconTone: 'bg-brand-500/10 text-brand-600 dark:text-brand-400',
+            filter: 'Leave',
+          },
+          selectedDate < format(new Date(), 'yyyy-MM-dd')
+            ? {
+                label: 'Absent',
+                value: stats.totalAbsent,
+                icon: UserX,
+                tone: 'text-rose-600 dark:text-rose-400',
+                iconTone: 'bg-rose-500/10 text-rose-600 dark:text-rose-400',
+                filter: 'Absent',
+              }
+            : {
+                label: 'Not Punched In',
+                value: stats.totalNotPunchedIn ?? 0,
+                icon: UserX,
+                tone: 'text-rose-600 dark:text-rose-400',
+                iconTone: 'bg-rose-500/10 text-rose-600 dark:text-rose-400',
+                filter: 'Not Punched In',
+              },
+        ].map((card) => {
+          const Icon = card.icon;
+          const active = statusFilter === card.filter && card.filter !== 'All';
+          return (
+            <button
+              key={card.label}
+              type="button"
+              onClick={() => {
+                setStatusFilter(active ? 'All' : card.filter);
+                if (card.filter !== 'All') setEnabledFilters((keys) => (keys.includes('status') ? keys : [...keys, 'status']));
+              }}
+              title={card.filter === 'All' ? 'Show everyone' : `Show only: ${card.label}`}
+              className={`p-5 rounded-xl bg-white dark:bg-slate-900 border shadow-sm dark:shadow-card flex items-center justify-between text-left transition-colors ${
+                active ? 'border-brand-500 ring-1 ring-brand-500' : 'border-slate-200 dark:border-slate-800 hover:border-brand-500/40'
+              }`}
+            >
+              <div>
+                <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold uppercase">{card.label}</span>
+                <div className={`text-2xl font-black mt-1 ${card.tone}`}>{card.value ?? 0}</div>
+                {card.sub && <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">{card.sub}</div>}
+              </div>
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${card.iconTone}`}>
+                <Icon className="w-5 h-5" />
+              </div>
+            </button>
+          );
+        })}
       </div>
 
       {/* Search & Filters */}
-      <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card space-y-3">
-        <div className="flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="relative w-full md:w-80">
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute inset-y-0 left-3.5 my-auto" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search employee name or ID..."
-              className="theme-input w-full pl-10 pr-4 text-xs"
-            />
-          </div>
-
-          <div className="flex items-center gap-3 w-full md:w-auto justify-end text-xs">
-            <span className="text-slate-500 dark:text-slate-400">
-              Showing <b className="text-slate-900 dark:text-white">{visibleRecords.length}</b> of {records.length}
-            </span>
-
-            {hasActiveFilters && (
-              <button
-                type="button"
-                onClick={resetFilters}
-                className="px-3 py-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 font-semibold inline-flex items-center gap-1.5"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                Reset
-              </button>
-            )}
-
-            <div className="relative" ref={filterMenuRef}>
-              <button
-                type="button"
-                onClick={() => setFilterMenuOpen((o) => !o)}
-                aria-expanded={filterMenuOpen}
-                className={`px-3.5 py-2 rounded-xl border font-semibold inline-flex items-center gap-1.5 transition-colors ${
-                  filterMenuOpen || appliedFilters.length
-                    ? 'border-brand-500 bg-brand-500/10 text-brand-700 dark:text-brand-300'
-                    : 'border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-                }`}
-              >
-                <Filter className="w-3.5 h-3.5" />
-                Filters
-                {appliedFilters.length > 0 && (
-                  <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-brand-600 text-white text-[10px] font-bold inline-flex items-center justify-center">
-                    {appliedFilters.length}
-                  </span>
-                )}
-                <ChevronDown className={`w-3.5 h-3.5 transition-transform ${filterMenuOpen ? 'rotate-180' : ''}`} />
-              </button>
-
-              {filterMenuOpen && (
-                <div className="absolute right-0 top-full mt-2 z-40 w-80 max-w-[calc(100vw-2rem)] max-h-[70vh] overflow-y-auto rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-soft">
-                  <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-800">
-                    <span className="font-bold text-slate-900 dark:text-white">Filter by</span>
-                    {(enabledFilters.length > 0 || appliedFilters.length > 0) && (
-                      <button
-                        type="button"
-                        onClick={clearAllFilters}
-                        className="text-brand-600 dark:text-brand-400 font-semibold hover:underline"
-                      >
-                        Clear all
-                      </button>
-                    )}
-                  </div>
-
-                  <div className="py-1">
-                    {filterDefs.map((f) => {
-                      const enabled = enabledFilters.includes(f.key);
-                      return (
-                        <div key={f.key} className="px-4 py-2">
-                          <label className="flex items-center gap-2.5 cursor-pointer select-none text-slate-700 dark:text-slate-300 font-semibold">
-                            <input
-                              type="checkbox"
-                              checked={enabled}
-                              onChange={() => toggleFilter(f)}
-                              className="w-3.5 h-3.5 accent-brand-600 cursor-pointer"
-                            />
-                            {f.label}
-                          </label>
-
-                          {enabled && (
-                            <div className="mt-2 pl-6">
-                              {f.key === 'checkIn' ? (
-                                <div className="flex items-center gap-1.5">
-                                  <input
-                                    type="time"
-                                    value={checkInFrom}
-                                    onChange={(e) => setCheckInFrom(e.target.value)}
-                                    className="theme-input text-xs flex-1 min-w-0"
-                                    aria-label="Check-in from"
-                                  />
-                                  <span className="text-slate-400">–</span>
-                                  <input
-                                    type="time"
-                                    value={checkInTo}
-                                    onChange={(e) => setCheckInTo(e.target.value)}
-                                    className="theme-input text-xs flex-1 min-w-0"
-                                    aria-label="Check-in to"
-                                  />
-                                </div>
-                              ) : (
-                                <select
-                                  value={f.value}
-                                  onChange={(e) => f.set(e.target.value)}
-                                  className="theme-input text-xs w-full"
-                                >
-                                  {f.options.map((o) => (
-                                    <option key={o.value} value={o.value}>
-                                      {o.label}
-                                    </option>
-                                  ))}
-                                </select>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Applied filter chips */}
-        {appliedFilters.length > 0 && (
-          <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
-            {appliedFilters.map((f) => (
-              <span
-                key={f.key}
-                className="inline-flex items-center gap-1.5 pl-2.5 pr-1 py-1 rounded-full bg-brand-500/10 border border-brand-500/25 text-[11px] text-brand-700 dark:text-brand-300"
-              >
-                <span className="text-slate-500 dark:text-slate-400">{f.label}:</span>
-                <b>{f.display}</b>
-                <button
-                  type="button"
-                  onClick={() => removeFilter(f)}
-                  aria-label={`Remove ${f.label} filter`}
-                  className="p-0.5 rounded-full hover:bg-brand-500/20"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              </span>
-            ))}
-          </div>
-        )}
-      </div>
+      <FilterBar
+        search={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="Search employee name or ID..."
+        filterDefs={filterDefs}
+        enabledFilters={enabledFilters}
+        setEnabledFilters={setEnabledFilters}
+        visibleCount={visibleRecords.length}
+        totalCount={records.length}
+        extraActive={!!sortBy}
+        onReset={() => {
+          setSortBy('');
+          setSortDir('asc');
+        }}
+      />
 
       {/* Attendance Records Table */}
       <div className="rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm dark:shadow-card transition-colors">
@@ -628,7 +586,7 @@ const AllAttendancePage = () => {
           </div>
         ) : records.length === 0 ? (
           <div className="p-12 text-center text-slate-500 dark:text-slate-400 text-xs">
-            No attendance punches recorded for {selectedDate}.
+            No active employees found for {selectedDate}.
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -653,7 +611,7 @@ const AllAttendancePage = () => {
                     </td>
                   </tr>
                 )}
-                {visibleRecords.map((r) => (
+                {pagination.pageItems.map((r) => (
                   <tr key={r._id} className="hover:bg-slate-50 dark:hover:bg-slate-850/50 transition-colors">
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
@@ -676,6 +634,12 @@ const AllAttendancePage = () => {
                     <td className="px-6 py-4">
                       <div className="text-slate-900 dark:text-slate-200 font-semibold">{r.userId?.department}</div>
                       <div className="text-[11px] text-slate-500 dark:text-slate-400">{r.userId?.designation}</div>
+                      {r.userId?.officeLocationName && (
+                        <div className="inline-flex items-center gap-1 mt-1 text-[10px] font-semibold text-brand-700 dark:text-brand-300">
+                          <MapPin className="w-3 h-3" />
+                          {r.userId.officeLocationName}
+                        </div>
+                      )}
                     </td>
 
                     <td className="px-6 py-4 text-slate-600 dark:text-slate-300 font-mono">
@@ -721,6 +685,9 @@ const AllAttendancePage = () => {
                     </td>
 
                     <td className="px-6 py-4">
+                      {!r.workMode ? (
+                        <span className="text-slate-400">—</span>
+                      ) : (
                       <span className="inline-flex items-center gap-1 text-slate-700 dark:text-slate-300">
                         {r.workMode === 'Remote' ? (
                           <Laptop className="w-3 h-3 text-brand-600 dark:text-brand-400" />
@@ -729,11 +696,25 @@ const AllAttendancePage = () => {
                         )}
                         {r.workMode}
                       </span>
+                      )}
                     </td>
 
-                    <td className="px-6 py-4">{getStatusBadge(r.status)}</td>
+                    <td className="px-6 py-4">
+                      {getStatusBadge(r.status)}
+                      {r.status === 'Leave' && r.leaveType && (
+                        <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+                          {r.leaveType === 'Paid' ? 'Earned' : r.leaveType} leave
+                        </div>
+                      )}
+                      {r.status === 'Holiday' && r.holidayName && (
+                        <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">{r.holidayName}</div>
+                      )}
+                    </td>
 
                     <td className="px-6 py-4 text-right">
+                      {r.isVirtual ? (
+                        <span className="text-slate-400">—</span>
+                      ) : (
                       <button
                         onClick={() => {
                           setSelectedRecord(JSON.parse(JSON.stringify(r)));
@@ -745,6 +726,7 @@ const AllAttendancePage = () => {
                         <Edit3 className="w-3.5 h-3.5" />
                         <span>Edit</span>
                       </button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -752,6 +734,7 @@ const AllAttendancePage = () => {
             </table>
           </div>
         )}
+        {!loading && <Pagination {...pagination} label="employees" />}
       </div>
 
       {/* EDIT / REGULARIZE MODAL */}

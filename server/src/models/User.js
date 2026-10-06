@@ -48,6 +48,13 @@ const userSchema = new mongoose.Schema(
       ref: 'User',
       default: null,
     },
+    // The office site (OrgSettings.officeLocations[]._id) this person works
+    // out of. Optional: null means "not assigned", which is also what every
+    // employee created before this field existed reads as.
+    officeLocationId: {
+      type: mongoose.Schema.Types.ObjectId,
+      default: null,
+    },
     phone: {
       type: String,
       default: '',

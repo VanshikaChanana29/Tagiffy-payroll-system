@@ -35,6 +35,7 @@ import { useToast } from '../context/ToastContext';
 import BankDetailsCard from '../components/profile/BankDetailsCard';
 import SalaryCard from '../components/profile/SalaryCard';
 import api from '../api/client';
+import useOfficeLocations from '../hooks/useOfficeLocations';
 import {
   uploadDocument,
   downloadDocument,
@@ -50,6 +51,7 @@ import Tooltip from '../components/common/Tooltip';
 
 const ProfilePage = () => {
   const { user, updateUser, isAdmin } = useAuth();
+  const officeLocations = useOfficeLocations();
   const toast = useToast();
 
   const [isEditing, setIsEditing] = useState(false);
@@ -622,6 +624,20 @@ const ProfilePage = () => {
                   disabled={!isEditing || !isAdmin}
                   value={formData.designation}
                   onChange={(e) => setFormData({ ...formData, designation: e.target.value })}
+                  className="theme-input w-full text-sm"
+                />
+              </div>
+
+              {/* HR assigns this from the Employee Directory; read-only here. */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-400 mb-1.5">Office Location</label>
+                <input
+                  type="text"
+                  disabled
+                  value={
+                    officeLocations.find((o) => o._id === String(user?.officeLocationId || ''))?.name ||
+                    'Not assigned'
+                  }
                   className="theme-input w-full text-sm"
                 />
               </div>

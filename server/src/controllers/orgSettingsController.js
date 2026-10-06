@@ -1,4 +1,6 @@
+const mongoose = require('mongoose');
 const OrgSettings = require('../models/OrgSettings');
+const User = require('../models/User');
 const { parseTimeToMinutes } = require('../utils/attendanceRules');
 const { parseEarnedPerMonth } = require('../utils/leavePolicy');
 
@@ -180,13 +182,17 @@ const updateOrgSettings = async (req, res) => {
         });
       }
 
+      // Employees are linked to a site by its _id, so an existing site must
+      // keep its id across saves; only genuinely new sites get a fresh one.
+      const existingIds = new Set((settings.officeLocations || []).map((l) => l._id.toString()));
       const cleaned = [];
       for (const loc of officeLocations) {
         const label = (loc?.name || '').toString().trim() || `Office ${cleaned.length + 1}`;
         const lat = Number(loc?.lat);
         const lng = Number(loc?.lng);
-        const isValidLat = Number.isFinite(lat) && lat >= -90 && lat <= 90;
-        const isValidLng = Number.isFinite(lng) && lng >= -180 && lng <= 180;
+        const isBlank = (v) => v === null || v === undefined || String(v).trim() === '';
+        const isValidLat = !isBlank(loc?.lat) && Number.isFinite(lat) && lat >= -90 && lat <= 90;
+        const isValidLng = !isBlank(loc?.lng) && Number.isFinite(lng) && lng >= -180 && lng <= 180;
         if (!isValidLat || !isValidLng) {
           return res.status(400).json({
             success: false,
@@ -202,13 +208,27 @@ const updateOrgSettings = async (req, res) => {
           });
         }
 
+        const keepId =
+          loc?._id && mongoose.Types.ObjectId.isValid(loc._id) && existingIds.has(String(loc._id));
         cleaned.push({
+          ...(keepId && { _id: new mongoose.Types.ObjectId(String(loc._id)) }),
           name: label,
           lat,
           lng,
           address: loc?.address ? String(loc.address).trim() : '',
           radiusMeters,
         });
+      }
+
+      // A removed site leaves its employees "Not assigned" rather than
+      // pointing at an office that no longer exists.
+      const keptIds = new Set(cleaned.filter((l) => l._id).map((l) => l._id.toString()));
+      const removedIds = [...existingIds].filter((id) => !keptIds.has(id));
+      if (removedIds.length) {
+        await User.updateMany(
+          { officeLocationId: { $in: removedIds.map((id) => new mongoose.Types.ObjectId(id)) } },
+          { $set: { officeLocationId: null } }
+        );
       }
 
       settings.officeLocations = cleaned;

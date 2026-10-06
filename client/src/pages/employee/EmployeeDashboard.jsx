@@ -21,8 +21,6 @@ import {
   XCircle,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import CheckInOutWidget from '../../components/attendance/CheckInOutWidget';
-import MonthAttendanceCalendar from '../../components/attendance/MonthAttendanceCalendar';
 import ApplyLeaveModal from '../../components/leave/ApplyLeaveModal';
 import api from '../../api/client';
 import { format } from 'date-fns';
@@ -37,9 +35,6 @@ const EmployeeDashboard = () => {
   const [recentActivities, setRecentActivities] = useState([]);
   const [loadingDashboard, setLoadingDashboard] = useState(true);
   const [leaveModalOpen, setLeaveModalOpen] = useState(false);
-  // MonthAttendanceCalendar fetches its own data internally and has no prop
-  // that tells it to refetch, so bumping this key remounts it after a punch.
-  const [calendarRefreshKey, setCalendarRefreshKey] = useState(0);
 
   const fetchDashboardData = async () => {
     try {
@@ -231,6 +226,13 @@ const EmployeeDashboard = () => {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
+            <Link
+              to="/employee/attendance"
+              className="px-4 py-2.5 rounded-xl bg-white text-brand-700 hover:bg-white/90 text-xs font-bold flex items-center gap-2 transition-all shrink-0 shadow-sm"
+            >
+              <Clock className="w-4 h-4" />
+              <span>Punch In / Out</span>
+            </Link>
             <button
               onClick={() => setLeaveModalOpen(true)}
               className="px-4 py-2.5 rounded-xl bg-white text-brand-700 hover:bg-white/90 text-xs font-bold flex items-center gap-2 transition-all shrink-0 shadow-sm"
@@ -299,17 +301,6 @@ const EmployeeDashboard = () => {
           </div>
         </div>
       </div>
-
-      {/* Primary Interactive Check In/Out Live Punch Widget */}
-      <CheckInOutWidget
-        onAttendanceChange={() => {
-          fetchDashboardData();
-          setCalendarRefreshKey((k) => k + 1);
-        }}
-      />
-
-      {/* Full Monthly Attendance Calendar */}
-      <MonthAttendanceCalendar key={calendarRefreshKey} onAttendanceChange={fetchDashboardData} />
 
       {/* Self-Service Shortcuts */}
       <div className="rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 space-y-4 shadow-sm dark:shadow-card transition-colors">

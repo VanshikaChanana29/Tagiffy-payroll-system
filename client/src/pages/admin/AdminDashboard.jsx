@@ -57,7 +57,8 @@ const AdminDashboard = () => {
 
       if (attRes.data.success) {
         setAttendanceStats(attRes.data.stats || { totalPresent: 0, totalHalfDay: 0, totalLeave: 0 });
-        setTodayRecords(attRes.data.records || []);
+        // The roll call also lists people with no punch; the live feed is punches only.
+        setTodayRecords((attRes.data.records || []).filter((r) => r.checkIn));
       }
 
       if (usersRes.data.success) {
@@ -108,7 +109,8 @@ const AdminDashboard = () => {
 
   const totalEmployees = employees.length || 1;
   const activeEmployees = employees.filter((e) => e.status === 'Active').length;
-  const presentRate = Math.min(100, Math.round((attendanceStats.totalPresent / totalEmployees) * 100));
+  const rollCallSize = attendanceStats.totalEmployees || totalEmployees;
+  const presentRate = Math.min(100, Math.round((attendanceStats.totalPresent / rollCallSize) * 100));
 
   // Department distribution calculation
   const deptCounts = employees.reduce((acc, emp) => {
@@ -187,7 +189,7 @@ const AdminDashboard = () => {
               Today's Roll Call
             </span>
             <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1">
-              {attendanceStats.totalPresent} / {totalEmployees}
+              {attendanceStats.totalPresent} / {rollCallSize}
             </div>
             <span className="text-[11px] text-emerald-600 dark:text-emerald-300/80 mt-0.5 block flex items-center gap-1">
               <TrendingUp className="w-3 h-3" /> {presentRate}% attendance rate
@@ -332,15 +334,9 @@ const AdminDashboard = () => {
 
             <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 flex items-center justify-between">
               <div>
-                <span className="text-[11px] font-semibold text-rose-600 dark:text-rose-400 uppercase">Absent / Off</span>
+                <span className="text-[11px] font-semibold text-rose-600 dark:text-rose-400 uppercase">Not Punched In</span>
                 <div className="text-xl font-bold text-slate-900 dark:text-white mt-0.5">
-                  {Math.max(
-                    0,
-                    totalEmployees -
-                      (attendanceStats.totalPresent +
-                        attendanceStats.totalHalfDay +
-                        attendanceStats.totalLeave)
-                  )}
+                  {attendanceStats.totalNotPunchedIn ?? 0}
                 </div>
               </div>
               <div className="w-3 h-3 rounded-full bg-rose-500" />

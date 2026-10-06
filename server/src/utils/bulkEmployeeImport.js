@@ -19,6 +19,7 @@ const COLUMN_ALIASES = {
   accountNumber: ['accountno', 'accountnumber', 'bankaccountno', 'bankaccountnumber'],
   ifscCode: ['ifsccode', 'ifsc'],
   bankName: ['bankname'],
+  officeLocation: ['officelocation', 'office', 'worklocation', 'branch', 'location'],
   attendanceExempt: ['attendanceexempt', 'attendanceexempt(y/n)', 'nopunch', 'punchnotrequired'],
 };
 
@@ -40,6 +41,7 @@ const TEMPLATE_HEADERS = [
   'IFSC code',
   'Bank name',
   'Attendance Exempt (Y/N)',
+  'Office Location',
 ];
 
 const TEMPLATE_SAMPLE_ROW = [
@@ -53,6 +55,7 @@ const TEMPLATE_SAMPLE_ROW = [
   'BKID0006751',
   'Bank of India',
   'N',
+  '',
 ];
 
 // Parses an uploaded workbook buffer into row objects keyed by our own field

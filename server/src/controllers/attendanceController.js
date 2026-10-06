@@ -12,6 +12,7 @@ const {
 const { getVisibleUserIds, canManageEmployee } = require('../utils/teamScope');
 const { isAdminRole } = require('../utils/roles');
 const { getHolidayMap } = require('./holidayController');
+const { officeNameById, resolveOfficeLocationId } = require('../utils/officeLocations');
 const {
   buildPunchLocation,
   formatDistanceMeters,
@@ -748,65 +749,159 @@ const getMyWeeklyView = async (req, res) => {
 // @desc    Get all attendance records (Admin only)
 // @route   GET /api/attendance/all
 // @access  Private (Admin only)
+//
+// A full roll call: every active employee appears once, punched in or not.
+// People with no punch get a synthesized row (isVirtual: true) whose status
+// says why — on approved leave, holiday, weekly off, not tracked, or simply
+// not punched in yet (today) / absent (past day). Without these rows, anyone
+// on leave or missing a punch silently vanished from the admin view.
+const ROLL_CALL_USER_FIELDS =
+  'name email employeeId department designation avatar status joiningDate weeklyOffDays attendanceExempt officeLocationId';
+
 const getAllAttendance = async (req, res) => {
   try {
-    const { date, department, status, search } = req.query;
-
-    const query = {};
-
-    // Filter by specific date (defaults to today if not provided)
-    if (date) {
-      query.date = date;
-    } else {
-      query.date = getTodayDateStr();
-    }
-
-    if (status && status !== 'All') {
-      query.status = status;
-    }
+    const { department, status, search, officeLocation } = req.query;
+    const dateStr = req.query.date || getTodayDateStr();
+    const todayStr = getTodayDateStr();
+    const day = new Date(`${dateStr}T00:00:00`);
 
     const visibleIds = await getVisibleUserIds(req.user);
-    if (visibleIds !== null) {
-      query.userId = { $in: visibleIds };
+    const userQuery = { status: 'Active' };
+    if (visibleIds !== null) userQuery._id = { $in: visibleIds };
+    if (department && department !== 'All') userQuery.department = department;
+
+    const orgSettings = await OrgSettings.getSettings();
+    if (officeLocation && officeLocation !== 'All') {
+      if (officeLocation === 'none') {
+        userQuery.officeLocationId = null;
+      } else {
+        const { value, error } = resolveOfficeLocationId(officeLocation, orgSettings);
+        if (error) return res.status(400).json({ success: false, message: error });
+        userQuery.officeLocationId = value;
+      }
     }
+    const officeNames = officeNameById(orgSettings);
+    const withOfficeName = (user) => ({
+      ...user,
+      officeLocationName: (user.officeLocationId && officeNames.get(user.officeLocationId.toString())) || null,
+    });
 
-    let records = await Attendance.find(query)
-      .populate('userId', 'name email employeeId department designation avatar status')
-      .sort({ createdAt: -1 });
+    const recordQuery = { date: dateStr };
+    if (visibleIds !== null) recordQuery.userId = { $in: visibleIds };
 
-    // Filter populated user fields (department, search) in memory
-    if (department && department !== 'All') {
-      records = records.filter(
-        (r) => r.userId && r.userId.department === department
-      );
-    }
+    const [employees, punchRecords, leaves] = await Promise.all([
+      User.find(userQuery).select(ROLL_CALL_USER_FIELDS).sort({ name: 1 }),
+      Attendance.find(recordQuery)
+        .populate('userId', ROLL_CALL_USER_FIELDS)
+        .sort({ createdAt: -1 }),
+      Leave.find({
+        status: 'Approved',
+        leaveType: { $ne: 'WFH' },
+        startDate: { $lte: dateStr },
+        endDate: { $gte: dateStr },
+        ...(visibleIds !== null ? { userId: { $in: visibleIds } } : {}),
+      }).select('userId leaveType'),
+    ]);
+    const settings = orgSettings;
 
+    const leaveByUser = new Map(leaves.map((l) => [l.userId.toString(), l.leaveType]));
+
+    // Holidays can be department-specific, so build one map per department.
+    const departments = [...new Set(employees.map((e) => e.department || ''))];
+    const holidayByDept = new Map(
+      await Promise.all(
+        departments.map(async (d) => [d, (await getHolidayMap(dateStr, dateStr, d || null))[dateStr]])
+      )
+    );
+
+    // Real punches first (newest first, as before), for employees still in scope.
+    const recordByUser = new Map();
+    punchRecords.forEach((r) => {
+      if (r.userId) recordByUser.set(r.userId._id.toString(), r);
+    });
+
+    const rows = [];
+    employees.forEach((emp) => {
+      const id = emp._id.toString();
+      const record = recordByUser.get(id);
+      const leaveType = leaveByUser.get(id) || null;
+
+      if (record) {
+        const obj = record.toObject();
+        rows.push({ ...obj, userId: withOfficeName(obj.userId), leaveType, isVirtual: false });
+        return;
+      }
+
+      // Not yet an employee on this date: leave them out of the roll call.
+      if (emp.joiningDate && format(new Date(emp.joiningDate), 'yyyy-MM-dd') > dateStr) return;
+
+      const holidayName = holidayByDept.get(emp.department || '') || null;
+      let rowStatus;
+      if (leaveType) rowStatus = 'Leave';
+      else if (holidayName) rowStatus = 'Holiday';
+      else if (!isWorkingDay(day, settings, null, emp.weeklyOffDays)) rowStatus = 'Weekly Off';
+      else if (emp.attendanceExempt) rowStatus = 'Not Tracked';
+      else if (dateStr > todayStr) rowStatus = 'Upcoming';
+      else if (dateStr === todayStr) rowStatus = 'Not Punched In';
+      else rowStatus = 'Absent';
+
+      rows.push({
+        _id: `rollcall-${id}`,
+        isVirtual: true,
+        userId: withOfficeName(emp.toObject()),
+        date: dateStr,
+        status: rowStatus,
+        leaveType,
+        holidayName,
+        checkIn: null,
+        checkOut: null,
+        totalHours: 0,
+        workMode: null,
+      });
+    });
+
+    let records = rows;
     if (search) {
       const s = search.toLowerCase().trim();
-      records = records.filter(
-        (r) =>
-          r.userId &&
-          (r.userId.name.toLowerCase().includes(s) ||
-            r.userId.email.toLowerCase().includes(s) ||
-            r.userId.employeeId.toLowerCase().includes(s) ||
-            r.userId.designation.toLowerCase().includes(s))
+      records = records.filter((r) =>
+        [r.userId?.name, r.userId?.email, r.userId?.employeeId, r.userId?.designation].some((v) =>
+          (v || '').toLowerCase().includes(s)
+        )
       );
     }
 
-    // Compute organization roll-call statistics for the requested date
-    const totalPresent = records.filter((r) => r.status === 'Present').length;
-    const totalHalfDay = records.filter((r) => r.status === 'Half-day').length;
-    const totalLeave = records.filter((r) => r.status === 'Leave').length;
+    // Punched-in rows first, then the rest grouped by status.
+    const statusOrder = ['Present', 'Half-day', 'Leave', 'Not Punched In', 'Absent', 'Holiday', 'Weekly Off', 'Not Tracked', 'Upcoming'];
+    records.sort((a, b) => {
+      if (!!a.checkIn !== !!b.checkIn) return a.checkIn ? -1 : 1;
+      if (a.checkIn && b.checkIn) return new Date(b.checkIn) - new Date(a.checkIn);
+      return statusOrder.indexOf(a.status) - statusOrder.indexOf(b.status);
+    });
+
+    // Stats describe the whole roll call (after department/search), not the
+    // status filter, so the cards don't collapse to zero when one is picked.
+    const countOf = (s) => records.filter((r) => r.status === s).length;
+    const stats = {
+      totalEmployees: records.length,
+      totalPunchedIn: records.filter((r) => r.checkIn).length,
+      totalPresent: countOf('Present'),
+      totalHalfDay: countOf('Half-day'),
+      totalLeave: countOf('Leave'),
+      totalNotPunchedIn: countOf('Not Punched In'),
+      totalAbsent: countOf('Absent'),
+      totalOff: countOf('Holiday') + countOf('Weekly Off'),
+      totalNotTracked: countOf('Not Tracked'),
+    };
+
+    if (status && status !== 'All') {
+      records = records.filter((r) => r.status === status);
+    }
 
     res.status(200).json({
       success: true,
-      date: query.date,
+      date: dateStr,
       count: records.length,
-      stats: {
-        totalPresent,
-        totalHalfDay,
-        totalLeave,
-      },
+      stats,
       records,
     });
   } catch (error) {

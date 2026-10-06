@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   Users,
-  Search,
-  Filter,
   UserPlus,
   Edit2,
   Eye,
@@ -23,6 +21,7 @@ import {
   KeyRound,
   EyeOff,
   RefreshCw,
+  MapPin,
 } from 'lucide-react';
 import api from '../../api/client';
 import { downloadEmployeeTemplate, uploadEmployeeSheet } from '../../api/files';
@@ -32,7 +31,10 @@ import { format } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import { useEmployeeInspection } from '../../context/EmployeeInspectionContext';
 import Tooltip from '../../components/common/Tooltip';
+import Pagination, { usePagination } from '../../components/common/Pagination';
+import FilterBar from '../../components/common/FilterBar';
 import { useAuth } from '../../context/AuthContext';
+import useOfficeLocations from '../../hooks/useOfficeLocations';
 
 // Sortable table columns -> the value each one sorts by.
 const SORT_FIELDS = {
@@ -60,6 +62,11 @@ const EmployeeDirectoryPage = () => {
   const [selectedDept, setSelectedDept] = useState('All');
   const [selectedStatus, setSelectedStatus] = useState('All');
   const [selectedBankStatus, setSelectedBankStatus] = useState('All');
+  const [selectedOffice, setSelectedOffice] = useState('All');
+  const [selectedRole, setSelectedRole] = useState('All');
+  // Filters switched on in the "Filters" menu
+  const [enabledFilters, setEnabledFilters] = useState([]);
+  const officeLocations = useOfficeLocations();
   const [sortBy, setSortBy] = useState('employeeId');
   const [sortDir, setSortDir] = useState('asc');
 
@@ -100,6 +107,7 @@ const EmployeeDirectoryPage = () => {
     address: { street: '', city: 'Bengaluru', state: 'Karnataka', zip: '' },
     emergencyContact: { name: '', relation: '', phone: '+91 ' },
     attendanceExempt: false,
+    officeLocationId: '',
   });
 
   const toast = useToast();
@@ -112,6 +120,8 @@ const EmployeeDirectoryPage = () => {
       if (selectedDept !== 'All') params.department = selectedDept;
       if (selectedStatus !== 'All') params.status = selectedStatus;
       if (selectedBankStatus !== 'All') params.bankStatus = selectedBankStatus;
+      if (selectedOffice !== 'All') params.officeLocation = selectedOffice;
+      if (selectedRole !== 'All') params.role = selectedRole;
 
       const res = await api.get('/users', { params });
       if (res.data.success) {
@@ -146,7 +156,7 @@ const EmployeeDirectoryPage = () => {
 
   useEffect(() => {
     fetchEmployees();
-  }, [selectedDept, selectedStatus, selectedBankStatus]);
+  }, [selectedDept, selectedStatus, selectedBankStatus, selectedOffice, selectedRole]);
 
   // Debounced search
   useEffect(() => {
@@ -203,6 +213,7 @@ const EmployeeDirectoryPage = () => {
           address: { street: '', city: 'Bengaluru', state: 'Karnataka', zip: '' },
           emergencyContact: { name: '', relation: '', phone: '+91 ' },
           attendanceExempt: false,
+          officeLocationId: '',
         });
         fetchEmployees();
       }
@@ -349,6 +360,82 @@ const EmployeeDirectoryPage = () => {
     );
   }, [employees, sortBy, sortDir]);
 
+  // Search, filters and sort above run over everyone; paging only picks the
+  // slice on screen, and goes back to page 1 whenever any of them change.
+  const pagination = usePagination(
+    sortedEmployees,
+    [search, selectedDept, selectedStatus, selectedBankStatus, selectedOffice, selectedRole, sortBy, sortDir].join('|')
+  );
+
+  const ROLE_LABELS = { super_admin: 'Super Admin', admin: 'Admin / HR', manager: 'Manager', employee: 'Employee' };
+  const BANK_LABELS = {
+    Missing: 'Not added',
+    Unconfirmed: 'Not confirmed by employee',
+    'Correction Pending': 'Change waiting for approval',
+    Confirmed: 'Confirmed',
+  };
+  const toOptions = (allLabel, pairs) => [
+    { value: 'All', label: allLabel },
+    ...pairs.map(([value, label]) => ({ value, label: label || value })),
+  ];
+
+  // Everything the "Filters" menu can turn on, same pattern as the attendance page.
+  const filterDefs = [
+    {
+      key: 'department',
+      label: 'Department',
+      value: selectedDept,
+      isSet: selectedDept !== 'All',
+      display: selectedDept,
+      set: setSelectedDept,
+      reset: () => setSelectedDept('All'),
+      options: toOptions('All Departments', orgDepartments.map((d) => [d.name])),
+    },
+    {
+      key: 'office',
+      label: 'Office Location',
+      value: selectedOffice,
+      isSet: selectedOffice !== 'All',
+      display:
+        selectedOffice === 'none'
+          ? 'Not assigned'
+          : officeLocations.find((o) => o._id === selectedOffice)?.name || 'Office',
+      set: setSelectedOffice,
+      reset: () => setSelectedOffice('All'),
+      options: toOptions('All Offices', [...officeLocations.map((o) => [o._id, o.name]), ['none', 'Not assigned']]),
+    },
+    {
+      key: 'role',
+      label: 'Role',
+      value: selectedRole,
+      isSet: selectedRole !== 'All',
+      display: ROLE_LABELS[selectedRole],
+      set: setSelectedRole,
+      reset: () => setSelectedRole('All'),
+      options: toOptions('All Roles', Object.entries(ROLE_LABELS)),
+    },
+    {
+      key: 'status',
+      label: 'Status',
+      value: selectedStatus,
+      isSet: selectedStatus !== 'All',
+      display: selectedStatus,
+      set: setSelectedStatus,
+      reset: () => setSelectedStatus('All'),
+      options: toOptions('All Statuses', [['Active'], ['Inactive']]),
+    },
+    {
+      key: 'bank',
+      label: 'Bank Details',
+      value: selectedBankStatus,
+      isSet: selectedBankStatus !== 'All',
+      display: BANK_LABELS[selectedBankStatus],
+      set: setSelectedBankStatus,
+      reset: () => setSelectedBankStatus('All'),
+      options: toOptions('All', Object.entries(BANK_LABELS)),
+    },
+  ];
+
   // Clicking the active column flips the direction; a new column starts ascending.
   const handleSort = (field) => {
     if (sortBy === field) {
@@ -451,69 +538,20 @@ const EmployeeDirectoryPage = () => {
         </div>
       </div>
 
-      {/* Search & Filters Bar */}
-      <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex flex-col md:flex-row items-center justify-between gap-4">
-        {/* Search input */}
-        <div className="relative w-full md:w-80">
-          <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
-            <Search className="w-4 h-4" />
-          </div>
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search employee name, ID, role..."
-            className="theme-input w-full pl-10 pr-4 text-xs"
-          />
-        </div>
-
-        {/* Filter Dropdowns */}
-        <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
-          <div className="flex items-center gap-2">
-            <Filter className="w-3.5 h-3.5 text-slate-400" />
-            <span className="text-xs text-slate-500 dark:text-slate-400">Dept:</span>
-            <select
-              value={selectedDept}
-              onChange={(e) => setSelectedDept(e.target.value)}
-              className="theme-input text-xs"
-            >
-              <option value="All">All Departments</option>
-              {orgDepartments.map((d) => (
-                <option key={d._id} value={d.name}>
-                  {d.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-500 dark:text-slate-400">Status:</span>
-            <select
-              value={selectedStatus}
-              onChange={(e) => setSelectedStatus(e.target.value)}
-              className="theme-input text-xs"
-            >
-              <option value="All">All Statuses</option>
-              <option value="Active">Active</option>
-              <option value="Inactive">Inactive</option>
-            </select>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-500 dark:text-slate-400">Bank details:</span>
-            <select
-              value={selectedBankStatus}
-              onChange={(e) => setSelectedBankStatus(e.target.value)}
-              className="theme-input text-xs"
-            >
-              <option value="All">All</option>
-              <option value="Missing">Not added</option>
-              <option value="Unconfirmed">Not confirmed by employee</option>
-              <option value="Correction Pending">Change waiting for approval</option>
-              <option value="Confirmed">Confirmed</option>
-            </select>
-          </div>
-        </div>
-      </div>
+      {/* Search & Filters */}
+      <FilterBar
+        search={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="Search employee name, ID, email, role..."
+        filterDefs={filterDefs}
+        enabledFilters={enabledFilters}
+        setEnabledFilters={setEnabledFilters}
+        extraActive={sortBy !== 'employeeId' || sortDir !== 'asc'}
+        onReset={() => {
+          setSortBy('employeeId');
+          setSortDir('asc');
+        }}
+      />
 
       {/* Employees Table */}
       <div className="rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm dark:shadow-card transition-colors">
@@ -541,7 +579,7 @@ const EmployeeDirectoryPage = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 dark:divide-slate-800/60">
-                {sortedEmployees.map((emp) => (
+                {pagination.pageItems.map((emp) => (
                   <tr
                     key={emp._id}
                     className="hover:bg-slate-50 dark:hover:bg-slate-850/50 transition-colors group"
@@ -595,6 +633,15 @@ const EmployeeDirectoryPage = () => {
                     <td className="px-6 py-4">
                       <div className="font-semibold text-slate-900 dark:text-slate-200">{emp.department}</div>
                       <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">{emp.designation}</div>
+                      {emp.officeLocationName && (
+                        <div
+                          className="inline-flex items-center gap-1 mt-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-brand-500/10 text-brand-700 dark:text-brand-300 border border-brand-500/25"
+                          title="Office location"
+                        >
+                          <MapPin className="w-3 h-3" />
+                          {emp.officeLocationName}
+                        </div>
+                      )}
                       {emp.reportingManager?.name && (
                         <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">
                           Reports to {emp.reportingManager.name}
@@ -699,6 +746,7 @@ const EmployeeDirectoryPage = () => {
             </table>
           </div>
         )}
+        {!loading && <Pagination {...pagination} label="employees" />}
       </div>
 
       {/* MODAL 1: ADD NEW EMPLOYEE */}
@@ -817,6 +865,25 @@ const EmployeeDirectoryPage = () => {
                       <option key={m._id} value={m._id}>{m.name} ({m.role})</option>
                     ))}
                   </select>
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Office Location <span className="font-normal text-slate-400">(optional)</span>
+                  </label>
+                  <select
+                    value={newEmployee.officeLocationId || ''}
+                    onChange={(e) => setNewEmployee({ ...newEmployee, officeLocationId: e.target.value })}
+                    className="theme-input w-full"
+                  >
+                    <option value="">Not assigned</option>
+                    {officeLocations.map((o) => (
+                      <option key={o._id} value={o._id}>{o.name}</option>
+                    ))}
+                  </select>
+                  {officeLocations.length === 0 && (
+                    <p className="text-[10px] text-slate-400 mt-1">No offices yet — add them in Org Settings.</p>
+                  )}
                 </div>
 
                 <div>
@@ -1026,6 +1093,25 @@ const EmployeeDirectoryPage = () => {
                         <option key={m._id} value={m._id}>{m.name} ({m.role})</option>
                       ))}
                   </select>
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Office Location <span className="font-normal text-slate-400">(optional)</span>
+                  </label>
+                  <select
+                    value={selectedEmployee.officeLocationId || ''}
+                    onChange={(e) => setSelectedEmployee({ ...selectedEmployee, officeLocationId: e.target.value })}
+                    className="theme-input w-full"
+                  >
+                    <option value="">Not assigned</option>
+                    {officeLocations.map((o) => (
+                      <option key={o._id} value={o._id}>{o.name}</option>
+                    ))}
+                  </select>
+                  {officeLocations.length === 0 && (
+                    <p className="text-[10px] text-slate-400 mt-1">No offices yet — add them in Org Settings.</p>
+                  )}
                 </div>
 
                 <div>
@@ -1240,6 +1326,12 @@ const EmployeeDirectoryPage = () => {
                   </div>
                 </div>
                 <div>
+                  <span className="text-slate-500 dark:text-slate-400 font-medium">Office Location</span>
+                  <div className="text-slate-900 dark:text-white font-semibold mt-0.5">
+                    {selectedEmployee.officeLocationName || 'Not assigned'}
+                  </div>
+                </div>
+                <div>
                   <span className="text-slate-500 dark:text-slate-400 font-medium">Work Email</span>
                   <div className="text-slate-900 dark:text-white font-semibold mt-0.5">{selectedEmployee.email}</div>
                 </div>
@@ -1329,8 +1421,8 @@ const EmployeeDirectoryPage = () => {
                   <div className="font-semibold text-slate-800 dark:text-slate-200">1. Download the template</div>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
                     Fill in Name and Email for each employee. Emp.code, DOJ, Contact No., Salary,
-                    Account no., IFSC code, and Bank name are optional — Department and Designation
-                    are assigned manually after upload.
+                    Account no., IFSC code, Bank name, and Office Location (an office name from Org
+                    Settings) are optional — Department and Designation are assigned manually after upload.
                   </p>
                 </div>
                 <button

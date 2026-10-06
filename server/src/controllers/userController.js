@@ -19,6 +19,7 @@ const { isAdminRole, isSuperAdmin } = require('../utils/roles');
 const { notify, getHrAndOwnerIds } = require('../utils/notificationService');
 const { parseTimeToMinutes } = require('../utils/attendanceRules');
 const { withLeaveBalances } = require('../utils/leavePolicy');
+const { officeNameById, resolveOfficeLocationId } = require('../utils/officeLocations');
 
 // Documents belong to the employee or to HR — nobody else, ever.
 const canAccessDocuments = (req, employeeId) =>
@@ -106,6 +107,19 @@ const validateDeptDesignation = async (department, designation) => {
   return null;
 };
 
+// Adds officeLocationName next to officeLocationId so screens don't each need
+// the org's office list to show it. An id that no longer matches a site reads
+// as unassigned.
+const withOfficeNames = (employees, settings) => {
+  const names = officeNameById(settings);
+  return employees.map((e) => {
+    const obj = typeof e.toJSON === 'function' ? e.toJSON() : { ...e };
+    const id = obj.officeLocationId ? obj.officeLocationId.toString() : null;
+    obj.officeLocationName = (id && names.get(id)) || null;
+    return obj;
+  });
+};
+
 // Salary goes to these accounts, so only HR and the employee themselves see
 // them; managers get their team list without bank details.
 const hideBankDetails = (employees, viewer) =>
@@ -127,7 +141,7 @@ const BANK_STATUS_FILTERS = {
 // @access  Private (Admin only)
 const getAllEmployees = async (req, res) => {
   try {
-    const { search, department, status, role, bankStatus } = req.query;
+    const { search, department, status, role, bankStatus, officeLocation } = req.query;
 
     const query = {};
 
@@ -148,6 +162,19 @@ const getAllEmployees = async (req, res) => {
     // Filter by role
     if (role && role !== 'All') {
       query.role = role;
+    }
+
+    // Filter by office site; 'none' finds people nobody has assigned yet
+    // (null also matches records created before the field existed).
+    const settings = await OrgSettings.getSettings();
+    if (officeLocation && officeLocation !== 'All') {
+      if (officeLocation === 'none') {
+        query.officeLocationId = null;
+      } else {
+        const { value, error } = resolveOfficeLocationId(officeLocation, settings);
+        if (error) return res.status(400).json({ success: false, message: error });
+        query.officeLocationId = value;
+      }
     }
 
     // Search by name, email, employeeId, or designation
@@ -183,7 +210,7 @@ const getAllEmployees = async (req, res) => {
       count: employees.length,
       total,
       departments,
-      employees: hideBankDetails(await withLeaveBalances(employees), req.user),
+      employees: hideBankDetails(withOfficeNames(await withLeaveBalances(employees), settings), req.user),
     });
   } catch (error) {
     console.error('Get All Employees Error:', error);
@@ -265,7 +292,10 @@ const getEmployeeById = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Employee not found' });
     }
 
-    const [withBalance] = await withLeaveBalances([employee]);
+    const [withBalance] = withOfficeNames(
+      await withLeaveBalances([employee]),
+      await OrgSettings.getSettings()
+    );
     res.status(200).json({
       success: true,
       employee: withBalance,
@@ -343,6 +373,7 @@ const createEmployee = async (req, res) => {
       weeklyOffDays,
       customShift,
       attendanceExempt,
+      officeLocationId,
     } = req.body;
 
     if (!name || !email || !department || !designation) {
@@ -369,6 +400,11 @@ const createEmployee = async (req, res) => {
     const deptDesigError = await validateDeptDesignation(department, designation);
     if (deptDesigError) {
       return res.status(400).json({ success: false, message: deptDesigError });
+    }
+
+    const office = resolveOfficeLocationId(officeLocationId, await OrgSettings.getSettings());
+    if (office.error) {
+      return res.status(400).json({ success: false, message: office.error });
     }
 
     // Check if email already exists
@@ -427,6 +463,8 @@ const createEmployee = async (req, res) => {
       customShift: shiftResult.value,
       // HR decides at onboarding whether this person punches in/out at all.
       attendanceExempt: parseFlag(attendanceExempt),
+      // Optional; HR can leave it blank and assign the office later.
+      officeLocationId: office.value,
     });
 
     // A new hire is payroll-ready the moment they are created, instead of
@@ -515,10 +553,11 @@ const bulkUploadEmployees = async (req, res) => {
     }
 
     // Prefetch reference data once instead of querying per row.
-    const [departments, designations, existingUsers] = await Promise.all([
+    const [departments, designations, existingUsers, settings] = await Promise.all([
       Department.find().select('name'),
       Designation.find().select('title'),
       User.find().select('email employeeId'),
+      OrgSettings.getSettings(),
     ]);
 
     const departmentByLower = new Map(departments.map((d) => [d.name.toLowerCase(), d.name]));
@@ -622,6 +661,13 @@ const bulkUploadEmployees = async (req, res) => {
         reportingManager = manager._id;
       }
 
+      // Optional column: an office name as set in Org Settings. Blank = unassigned.
+      const office = resolveOfficeLocationId(data.officeLocation, settings);
+      if (office.error) {
+        fail(office.error);
+        continue;
+      }
+
       const joiningDate = data.joiningDate ? new Date(data.joiningDate) : new Date();
       if (Number.isNaN(joiningDate.getTime())) {
         fail(`Joining date '${data.joiningDate}' is not a valid date.`);
@@ -661,6 +707,7 @@ const bulkUploadEmployees = async (req, res) => {
           isVerified: true,
           leaveBalance: { paid: 14, sick: 7, unpaid: 0 },
           attendanceExempt: parseFlag(data.attendanceExempt),
+          officeLocationId: office.value,
           bankDetails: {
             accountNumber: (data.accountNumber || '').toString().trim(),
             ifscCode: (data.ifscCode || '').toString().trim().toUpperCase(),
@@ -766,6 +813,7 @@ const updateEmployee = async (req, res) => {
         weeklyOffDays,
         customShift,
         attendanceExempt,
+        officeLocationId,
       } = req.body;
 
       if (department || designation) {
@@ -829,6 +877,12 @@ const updateEmployee = async (req, res) => {
       // Turning this on hides punch in/out and moves their pay to HR-entered
       // amounts; turning it off brings normal attendance back from today.
       if (attendanceExempt !== undefined) employee.attendanceExempt = parseFlag(attendanceExempt);
+      // Empty / null clears it back to "Not assigned".
+      if (officeLocationId !== undefined) {
+        const { value, error } = resolveOfficeLocationId(officeLocationId, await OrgSettings.getSettings());
+        if (error) return res.status(400).json({ success: false, message: error });
+        employee.officeLocationId = value;
+      }
     }
 
     await employee.save();

@@ -34,6 +34,7 @@ const OfficeLocationPanel = () => {
         if (Array.isArray(settings.officeLocations) && settings.officeLocations.length > 0) {
           setLocations(
             settings.officeLocations.map((loc, i) => ({
+              _id: loc._id,
               name: loc.name || `Office ${i + 1}`,
               lat: loc.lat ?? '',
               lng: loc.lng ?? '',
@@ -69,6 +70,15 @@ const OfficeLocationPanel = () => {
   };
 
   const removeLocation = (index) => {
+    const loc = locations[index];
+    if (
+      loc?._id &&
+      !window.confirm(
+        `Remove "${loc.name}"? Employees assigned to it will become "Not assigned" once you save.`
+      )
+    ) {
+      return;
+    }
     setLocations((prev) => prev.filter((_, i) => i !== index));
   };
 
@@ -88,9 +98,11 @@ const OfficeLocationPanel = () => {
     e.preventDefault();
 
     for (const loc of locations) {
+      // An empty box would otherwise read as 0 and save a site at 0,0.
+      const isBlank = (v) => v === '' || v === null || v === undefined || String(v).trim() === '';
       const lat = Number(loc.lat);
       const lng = Number(loc.lng);
-      if (Number.isNaN(lat) || Number.isNaN(lng)) {
+      if (isBlank(loc.lat) || isBlank(loc.lng) || Number.isNaN(lat) || Number.isNaN(lng)) {
         toast.error(`Enter a valid latitude and longitude for "${loc.name || 'this location'}".`);
         return;
       }
@@ -104,7 +116,10 @@ const OfficeLocationPanel = () => {
     try {
       setSaving(true);
       const res = await api.put('/org-settings', {
+        // _id keeps an existing site's identity, so employees assigned to it
+        // stay assigned through renames and edits.
         officeLocations: locations.map((loc) => ({
+          _id: loc._id,
           name: loc.name?.trim() || undefined,
           lat: Number(loc.lat),
           lng: Number(loc.lng),
@@ -116,6 +131,7 @@ const OfficeLocationPanel = () => {
         toast.success('Office locations saved. New punches will be checked against them.');
         setLocations(
           (res.data.settings.officeLocations || []).map((loc, i) => ({
+            _id: loc._id,
             name: loc.name || `Office ${i + 1}`,
             lat: loc.lat,
             lng: loc.lng,
@@ -172,7 +188,7 @@ const OfficeLocationPanel = () => {
         <div className="space-y-4">
           {locations.map((loc, index) => (
             <div
-              key={index}
+              key={loc._id || `new-${index}`}
               className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 space-y-4"
             >
               <div className="flex items-center justify-between gap-3">
