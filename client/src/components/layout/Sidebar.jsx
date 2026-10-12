@@ -1,5 +1,5 @@
-import React from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
   Users,
@@ -12,17 +12,60 @@ import {
   Building2,
   Receipt,
   Wallet,
+  User,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { TaggifyIcon } from '../common/TaggifyLogo';
 import Tooltip from '../common/Tooltip';
 
+// Admins are employees too. Their sidebar shows one side at a time: the
+// company pages they run, or their own punch-in / leave / payslip pages.
+const VIEW_MODE_KEY = 'sidebarViewMode';
+
+const isPersonalPath = (path) => path.startsWith('/employee') || path === '/admin/profile';
+
+const readSavedMode = () => {
+  try {
+    return localStorage.getItem(VIEW_MODE_KEY) === 'personal' ? 'personal' : 'company';
+  } catch {
+    return 'company';
+  }
+};
+
 const Sidebar = ({ isOpen, onClose }) => {
   const { user, logout, isAdmin } = useAuth();
   const isManager = user?.role === 'manager';
   const toast = useToast();
   const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const [viewMode, setViewMode] = useState(() =>
+    isPersonalPath(window.location.pathname) ? 'personal' : readSavedMode()
+  );
+
+  const saveMode = (mode) => {
+    setViewMode(mode);
+    try {
+      localStorage.setItem(VIEW_MODE_KEY, mode);
+    } catch {
+      // Only a convenience; the toggle still works for this visit.
+    }
+  };
+
+  // Landing on a page from the other side (a notification, a link) flips the
+  // toggle so the sidebar always shows where you are.
+  useEffect(() => {
+    if (!isAdmin) return;
+    const pathMode = isPersonalPath(pathname) ? 'personal' : 'company';
+    if (pathMode !== viewMode) saveMode(pathMode);
+  }, [pathname, isAdmin]);
+
+  const switchMode = (mode) => {
+    if (mode === viewMode) return;
+    saveMode(mode);
+    navigate(mode === 'personal' ? '/employee/attendance' : '/admin');
+    onClose?.();
+  };
 
   const handleLogout = async () => {
     await logout();
@@ -32,7 +75,7 @@ const Sidebar = ({ isOpen, onClose }) => {
 
   // HR/admin is also an employee: they check in, apply leave, and get
   // payslips like anyone else, alongside their org-wide oversight pages.
-  const adminNavItems = [
+  const adminCompanyNavItems = [
     { label: 'Dashboard', path: '/admin', icon: LayoutDashboard, exact: true },
     { label: 'Employees', path: '/admin/employees', icon: Users },
     { label: 'Attendance', path: '/admin/attendance', icon: Clock },
@@ -41,6 +84,9 @@ const Sidebar = ({ isOpen, onClose }) => {
     { label: 'Payroll', path: '/admin/payroll', icon: DollarSign },
     { label: 'Misc Expenses', path: '/admin/expenses', icon: Wallet },
     { label: 'Org Settings', path: '/admin/org-settings', icon: Building2 },
+  ];
+
+  const adminPersonalNavItems = [
     { label: 'My Attendance', path: '/employee/attendance', icon: Clock },
     { label: 'My Time Off', path: '/employee/leaves', icon: CalendarDays },
     { label: 'My Payslips', path: '/employee/salary', icon: DollarSign },
@@ -72,6 +118,7 @@ const Sidebar = ({ isOpen, onClose }) => {
     { label: 'My Profile', path: '/employee/profile', icon: UserCircle },
   ];
 
+  const adminNavItems = viewMode === 'personal' ? adminPersonalNavItems : adminCompanyNavItems;
   const navItems = isAdmin ? adminNavItems : isManager ? managerNavItems : employeeNavItems;
 
   return (
@@ -101,7 +148,7 @@ const Sidebar = ({ isOpen, onClose }) => {
                 TAG<span className="text-brand-500">GIFY</span>
               </div>
               <p className="mt-1 text-[11px] leading-none text-slate-500 dark:text-slate-400">
-                {isAdmin ? 'Admin workspace' : 'Employee workspace'}
+                {isAdmin && viewMode === 'company' ? 'Admin workspace' : 'Employee workspace'}
               </p>
             </div>
           </div>
@@ -112,6 +159,41 @@ const Sidebar = ({ isOpen, onClose }) => {
             </button>
           </Tooltip>
         </div>
+
+        {/* Company / Personal switch — admins only */}
+        {isAdmin && (
+          <div className="px-3 pt-3">
+            <div
+              role="tablist"
+              aria-label="Sidebar view"
+              className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-slate-100 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800"
+            >
+              {[
+                { mode: 'company', label: 'Company', icon: Building2 },
+                { mode: 'personal', label: 'Personal', icon: User },
+              ].map(({ mode, label, icon: Icon }) => {
+                const active = viewMode === mode;
+                return (
+                  <button
+                    key={mode}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    onClick={() => switchMode(mode)}
+                    className={`flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                      active
+                        ? 'bg-white dark:bg-slate-800 text-brand-600 dark:text-brand-300 shadow-sm'
+                        : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    <Icon className="w-3.5 h-3.5" />
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto p-3 space-y-1">
