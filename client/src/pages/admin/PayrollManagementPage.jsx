@@ -17,7 +17,9 @@ import {
   PlayCircle,
   Download,
   HandCoins,
+  Building2,
 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import api from '../../api/client';
 import { downloadPayslip, readBlobError } from '../../api/payslips';
 import useDepartments from '../../hooks/useDepartments';
@@ -104,6 +106,17 @@ const PayrollManagementPage = () => {
   useEffect(() => {
     fetchPayrollData();
   }, [selectedMonth, selectedYear, department, paymentStatusFilter]);
+
+  // Company-wide totals (payroll + reimbursements + misc expenses) for the cycle.
+  const [companySummary, setCompanySummary] = useState(null);
+  useEffect(() => {
+    api
+      .get('/misc-expenses/summary', { params: { month: selectedMonth, year: selectedYear } })
+      .then((res) => {
+        if (res.data.success) setCompanySummary(res.data.summary);
+      })
+      .catch(() => setCompanySummary(null));
+  }, [selectedMonth, selectedYear, records]);
 
   // Debounced search
   useEffect(() => {
@@ -284,6 +297,34 @@ const PayrollManagementPage = () => {
           </div>
         </div>
       </div>
+
+      {/* Company-wide spend for the cycle: payroll plus everything else the
+          company paid out that month. Not narrowed by the department filter. */}
+      {companySummary && (
+        <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex flex-col lg:flex-row lg:items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-2 font-bold text-slate-900 dark:text-white">
+            <Building2 className="w-4 h-4 text-brand-500" />
+            Company Expenses · {months[selectedMonth - 1].name} {selectedYear}
+          </div>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-slate-500 dark:text-slate-400">
+            <span>
+              Payroll <span className="font-semibold text-slate-900 dark:text-white">₹{companySummary.payroll.gross.toLocaleString('en-IN')}</span>
+            </span>
+            <span>+</span>
+            <span>
+              Reimbursements <span className="font-semibold text-slate-900 dark:text-white">₹{companySummary.reimbursements.total.toLocaleString('en-IN')}</span>
+            </span>
+            <span>+</span>
+            <Link to="/admin/expenses" className="hover:underline">
+              Misc <span className="font-semibold text-slate-900 dark:text-white">₹{companySummary.misc.total.toLocaleString('en-IN')}</span>
+            </Link>
+            <span>=</span>
+            <span className="text-sm font-black text-rose-600 dark:text-rose-400">
+              ₹{companySummary.totalCompanyExpense.toLocaleString('en-IN')}
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Filter Bar (Month/Year, Dept, Search) */}
       <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-card flex flex-col md:flex-row items-center justify-between gap-4">

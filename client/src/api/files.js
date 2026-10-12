@@ -112,3 +112,20 @@ export const downloadReimbursementReceipt = async (reimbursement) => {
   link.remove();
   window.URL.revokeObjectURL(blobUrl);
 };
+
+/** Downloads one bill / slip attached to a miscellaneous company expense. */
+export const downloadExpenseDocument = async (expenseId, doc) => {
+  const res = await api.get(`/misc-expenses/${expenseId}/documents/${doc._id}`, {
+    responseType: 'blob',
+  });
+
+  const contentType = res.headers['content-type'] || 'application/octet-stream';
+  const blobUrl = window.URL.createObjectURL(new Blob([res.data], { type: contentType }));
+  const link = document.createElement('a');
+  link.href = blobUrl;
+  link.download = doc.originalName || 'attachment';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(blobUrl);
+};

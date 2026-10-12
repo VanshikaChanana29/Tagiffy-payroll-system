@@ -188,7 +188,41 @@ const uploadReceipt = (req, res, next) => {
   });
 };
 
+// --- Miscellaneous company expense slips (bills, rent receipts) -----------
+
+const EXPENSES_FOLDER = 'expenses';
+const MAX_EXPENSE_FILES = 5;
+
+const expenseUpload = multer({
+  storage: multer.memoryStorage(),
+  fileFilter: receiptFilter,
+  limits: { fileSize: MAX_RECEIPT_BYTES, files: MAX_EXPENSE_FILES },
+});
+
+// Slips are optional, and an entry can carry several (e.g. bill + payment proof).
+const uploadExpenseDocs = (req, res, next) => {
+  expenseUpload.array('documents', MAX_EXPENSE_FILES)(req, res, (err) => {
+    if (err) {
+      const message =
+        err.code === 'LIMIT_FILE_SIZE'
+          ? `File is too large. Maximum allowed size is ${MAX_RECEIPT_BYTES / (1024 * 1024)} MB.`
+          : err.code === 'LIMIT_FILE_COUNT' || err.code === 'LIMIT_UNEXPECTED_FILE'
+            ? `You can attach up to ${MAX_EXPENSE_FILES} files per expense.`
+            : err.message || 'File upload failed';
+      return res.status(400).json({ success: false, message });
+    }
+    (req.files || []).forEach((file) => {
+      const ext = ALLOWED_RECEIPT_TYPES[file.mimetype] || path.extname(file.originalname) || '.bin';
+      file.filename = `expense-${uniqueSuffix(1e12)}${ext}`;
+    });
+    next();
+  });
+};
+
 module.exports = {
+  uploadExpenseDocs,
+  EXPENSES_FOLDER,
+  MAX_EXPENSE_FILES,
   uploadDocument,
   DOCUMENTS_FOLDER,
   MAX_FILE_BYTES,

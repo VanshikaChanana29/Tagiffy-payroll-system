@@ -62,6 +62,7 @@ app.use('/api/salaries', require('./routes/salaryRoutes'));
 app.use('/api/departments', require('./routes/departmentRoutes'));
 app.use('/api/designations', require('./routes/designationRoutes'));
 app.use('/api/pages', require('./routes/pageRoutes'));
+app.use('/api/misc-expenses', require('./routes/miscExpenseRoutes'));
 app.use('/api/org-settings', require('./routes/orgSettingsRoutes'));
 app.use('/api/payroll', require('./routes/payrollRoutes'));
 app.use('/api/salary-advances', require('./routes/salaryAdvanceRoutes'));

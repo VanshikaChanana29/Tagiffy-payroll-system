@@ -11,6 +11,7 @@ import {
   X,
   Building2,
   Receipt,
+  Wallet,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
@@ -38,6 +39,7 @@ const Sidebar = ({ isOpen, onClose }) => {
     { label: 'Time Off', path: '/admin/leaves', icon: CalendarDays },
     { label: 'Reimbursements', path: '/admin/reimbursements', icon: Receipt },
     { label: 'Payroll', path: '/admin/payroll', icon: DollarSign },
+    { label: 'Misc Expenses', path: '/admin/expenses', icon: Wallet },
     { label: 'Org Settings', path: '/admin/org-settings', icon: Building2 },
     { label: 'My Attendance', path: '/employee/attendance', icon: Clock },
     { label: 'My Time Off', path: '/employee/leaves', icon: CalendarDays },
