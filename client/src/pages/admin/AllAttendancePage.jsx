@@ -17,6 +17,8 @@ import {
   Users,
   UserX,
   MapPin,
+  UserCheck,
+  UserMinus,
 } from 'lucide-react';
 import api from '../../api/client';
 import RegularizationApprovals from '../../components/admin/RegularizationApprovals';
@@ -37,6 +39,8 @@ const AllAttendancePage = () => {
   const officeLocations = useOfficeLocations();
   const [officeFilter, setOfficeFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState('All');
+  // Punch-in required vs. attendance-exempt staff, shown as separate lists
+  const [tracking, setTracking] = useState('all');
   const [search, setSearch] = useState('');
   const [records, setRecords] = useState([]);
   const [stats, setStats] = useState({
@@ -46,6 +50,8 @@ const AllAttendancePage = () => {
     totalLeave: 0,
     totalNotPunchedIn: 0,
     totalAbsent: 0,
+    totalRequired: 0,
+    totalExempt: 0,
   });
   const [loading, setLoading] = useState(true);
 
@@ -79,6 +85,7 @@ const AllAttendancePage = () => {
       if (department !== 'All') params.department = department;
       if (officeFilter !== 'All') params.officeLocation = officeFilter;
       if (statusFilter !== 'All') params.status = statusFilter;
+      if (tracking !== 'all') params.tracking = tracking;
       if (search) params.search = search;
 
       const res = await api.get('/attendance/all', { params });
@@ -95,7 +102,7 @@ const AllAttendancePage = () => {
 
   useEffect(() => {
     fetchCompanyAttendance();
-  }, [selectedDate, department, officeFilter, statusFilter]);
+  }, [selectedDate, department, officeFilter, statusFilter, tracking]);
 
   // Debounced search
   useEffect(() => {
@@ -478,13 +485,52 @@ const AllAttendancePage = () => {
         </div>
       </div>
 
+      {/* Punch-in required vs. not required */}
+      <div className="flex flex-wrap gap-2" role="tablist" aria-label="Attendance tracking">
+        {[
+          { key: 'all', label: 'All Employees', count: stats.totalEmployees, icon: Users },
+          { key: 'required', label: 'Punch-in Required', count: stats.totalRequired, icon: UserCheck },
+          { key: 'exempt', label: 'Punch-in Not Required', count: stats.totalExempt, icon: UserMinus },
+        ].map((tab) => {
+          const Icon = tab.icon;
+          const active = tracking === tab.key;
+          return (
+            <button
+              key={tab.key}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => {
+                setTracking(tab.key);
+                setStatusFilter('All');
+              }}
+              className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold border transition-colors ${
+                active
+                  ? 'bg-brand-500 text-white border-brand-500'
+                  : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:border-brand-500/40'
+              }`}
+            >
+              <Icon className="w-4 h-4" />
+              {tab.label}
+              <span
+                className={`px-1.5 py-0.5 rounded-md text-[11px] font-bold ${
+                  active ? 'bg-white/20 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                }`}
+              >
+                {tab.count ?? 0}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
       {/* Metric Counters */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
         {[
           {
             label: 'Total Employees',
             value: stats.totalEmployees ?? records.length,
-            sub: `${stats.totalPunchedIn ?? 0} punched in`,
+            sub: `${stats.totalPunchedIn ?? 0} punched in${stats.totalExempt ? ` · ${stats.totalExempt} punch-in not required` : ''}`,
             icon: Users,
             tone: 'text-slate-900 dark:text-white',
             iconTone: 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300',

@@ -194,6 +194,11 @@ const AdminDashboard = () => {
             <span className="text-[11px] text-emerald-600 dark:text-emerald-300/80 mt-0.5 block flex items-center gap-1">
               <TrendingUp className="w-3 h-3" /> {presentRate}% attendance rate
             </span>
+            {attendanceStats.totalExempt > 0 && (
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 block">
+                {attendanceStats.totalExempt} of {rollCallSize} punch-in not required
+              </span>
+            )}
           </div>
           <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
             <CheckCircle2 className="w-5 h-5" />

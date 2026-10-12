@@ -760,7 +760,8 @@ const ROLL_CALL_USER_FIELDS =
 
 const getAllAttendance = async (req, res) => {
   try {
-    const { department, status, search, officeLocation } = req.query;
+    // tracking: 'required' (must punch) | 'exempt' (punch not required) | anything else = everyone
+    const { department, status, search, officeLocation, tracking } = req.query;
     const dateStr = req.query.date || getTodayDateStr();
     const todayStr = getTodayDateStr();
     const day = new Date(`${dateStr}T00:00:00`);
@@ -881,8 +882,13 @@ const getAllAttendance = async (req, res) => {
     // Stats describe the whole roll call (after department/search), not the
     // status filter, so the cards don't collapse to zero when one is picked.
     const countOf = (s) => records.filter((r) => r.status === s).length;
+    // Punch-in required vs. attendance-exempt split, for listing them separately.
+    const isExempt = (r) => !!r.userId?.attendanceExempt;
+    const totalExempt = records.filter(isExempt).length;
     const stats = {
       totalEmployees: records.length,
+      totalRequired: records.length - totalExempt,
+      totalExempt,
       totalPunchedIn: records.filter((r) => r.checkIn).length,
       totalPresent: countOf('Present'),
       totalHalfDay: countOf('Half-day'),
@@ -892,6 +898,9 @@ const getAllAttendance = async (req, res) => {
       totalOff: countOf('Holiday') + countOf('Weekly Off'),
       totalNotTracked: countOf('Not Tracked'),
     };
+
+    if (tracking === 'required') records = records.filter((r) => !isExempt(r));
+    else if (tracking === 'exempt') records = records.filter(isExempt);
 
     if (status && status !== 'All') {
       records = records.filter((r) => r.status === status);
