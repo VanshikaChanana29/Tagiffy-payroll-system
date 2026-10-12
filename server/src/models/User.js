@@ -163,6 +163,13 @@ const userSchema = new mongoose.Schema(
       unpaid: { type: Number, default: 0 },
     },
 
+    // A personal earned-leave rate that overrides the department's, e.g. a few
+    // people in one department who get 2 days instead of 1. Null means "use the
+    // department rate" (and from there the company default).
+    leavePolicy: {
+      earnedPerMonth: { type: Number, default: null, min: 0, max: 31 },
+    },
+
     // Which days of the week are this employee's paid weekly off, e.g. [0, 6]
     // for Sun+Sat or just [0] for a 6-day-week role (0 = Sunday ... 6 = Saturday).
     // HR sets this per person after onboarding since different offices/roles

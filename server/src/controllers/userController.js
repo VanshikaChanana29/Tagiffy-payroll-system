@@ -17,7 +17,7 @@ const { parseEmployeeSheet, buildEmployeeTemplateWorkbook } = require('../utils/
 const { isAdminRole, isSuperAdmin } = require('../utils/roles');
 const { notify, getHrAndOwnerIds } = require('../utils/notificationService');
 const { parseTimeToMinutes } = require('../utils/attendanceRules');
-const { withLeaveBalances } = require('../utils/leavePolicy');
+const { withLeaveBalances, parseEarnedPerMonth } = require('../utils/leavePolicy');
 const { officeNameById, resolveOfficeLocationId } = require('../utils/officeLocations');
 
 // Documents belong to the employee or to HR — nobody else, ever.
@@ -801,6 +801,7 @@ const updateEmployee = async (req, res) => {
         address,
         emergencyContact,
         leaveBalance,
+        leavePolicy,
         joiningDate,
         dateOfBirth,
         weeklyOffDays,
@@ -848,6 +849,13 @@ const updateEmployee = async (req, res) => {
         employee.emergencyContact = { ...employee.emergencyContact, ...emergencyContact };
       if (leaveBalance)
         employee.leaveBalance = { ...employee.leaveBalance, ...leaveBalance };
+      // A personal monthly earned-leave rate; empty clears it back to the
+      // department rate. Like a department change, it applies to this month too.
+      if (leavePolicy?.earnedPerMonth !== undefined) {
+        const { value, error } = parseEarnedPerMonth(leavePolicy.earnedPerMonth, { allowNull: true });
+        if (error) return res.status(400).json({ success: false, message: error });
+        employee.leavePolicy = { earnedPerMonth: value };
+      }
       // HR assigns this per person, any time after onboarding — e.g. a branch
       // that only closes Sunday instead of the usual Saturday+Sunday.
       if (weeklyOffDays !== undefined) {
@@ -880,10 +888,12 @@ const updateEmployee = async (req, res) => {
 
     await employee.save();
 
+    // Send the live balance back so a changed leave rate shows up straight away.
+    const [withBalance] = await withLeaveBalances([employee]);
     res.status(200).json({
       success: true,
       message: 'Profile updated successfully',
-      employee,
+      employee: withBalance,
     });
   } catch (error) {
     console.error('Update Employee Error:', error);

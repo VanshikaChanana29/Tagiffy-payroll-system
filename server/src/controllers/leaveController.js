@@ -174,7 +174,7 @@ const getMyLeaves = async (req, res) => {
   try {
     const userId = (isAdminRole(req.user.role) && req.query.userId) ? req.query.userId : req.user._id;
 
-    const user = await User.findById(userId).select('name employeeId department joiningDate');
+    const user = await User.findById(userId).select('name employeeId department joiningDate leavePolicy');
     const leaves = await Leave.find({ userId })
       .populate('reviewedBy', 'name designation avatar')
       .sort({ createdAt: -1 });
@@ -221,7 +221,7 @@ const getAllLeaves = async (req, res) => {
     }
 
     let leaves = await Leave.find(query)
-      .populate('userId', 'name email employeeId department designation avatar joiningDate')
+      .populate('userId', 'name email employeeId department designation avatar joiningDate leavePolicy')
       .populate('reviewedBy', 'name designation')
       .sort({ createdAt: -1 });
 
@@ -453,7 +453,7 @@ const cancelMyLeave = async (req, res) => {
     leave.cancelledAt = new Date();
     await leave.save();
 
-    const employee = await User.findById(leave.userId).select('name reportingManager role department joiningDate');
+    const employee = await User.findById(leave.userId).select('name reportingManager role department joiningDate leavePolicy');
 
     notify({
       recipients: await getEscalationRecipientIds(employee || req.user),

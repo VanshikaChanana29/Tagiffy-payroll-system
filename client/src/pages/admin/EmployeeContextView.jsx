@@ -52,6 +52,13 @@ import { formatHours } from '../../utils/formatHours';
 
 const inr = (n) => '₹' + Math.round(Number(n) || 0).toLocaleString('en-IN');
 
+// Where an employee's monthly leave rate comes from (see server utils/leavePolicy.js).
+const rateSourceLabel = (source, department) => {
+  if (source === 'employee') return 'Personal rate for this employee';
+  if (source === 'company') return 'Company default';
+  return department ? `${department} policy` : 'Department policy';
+};
+
 const EmployeeContextView = () => {
   const {
     inspectedEmployee,
@@ -148,6 +155,7 @@ const EmployeeContextView = () => {
             graceMinutes: u.customShift?.graceMinutes ?? '',
           },
           attendanceExempt: !!u.attendanceExempt,
+          earnedPerMonth: u.leavePolicy?.earnedPerMonth ?? '',
         });
       }
 
@@ -272,9 +280,11 @@ const EmployeeContextView = () => {
     if (!inspectedEmployee?._id) return;
 
     // The toggle is UI-only: off sends null, which puts them back on the org shift.
-    const { customShift, ...rest } = editFormData;
+    // An empty leave rate sends null, which puts them back on the department rate.
+    const { customShift, earnedPerMonth, ...rest } = editFormData;
     const payload = {
       ...rest,
+      leavePolicy: { earnedPerMonth: earnedPerMonth === '' ? null : Number(earnedPerMonth) },
       customShift: customShift?.enabled
         ? {
             shiftStart: customShift.shiftStart,
@@ -291,6 +301,9 @@ const EmployeeContextView = () => {
         toast.success(`Updated ${res.data.employee.name}'s profile details`);
         setProfileData(res.data.employee);
         updateInspectedEmployee(res.data.employee);
+        if (res.data.employee.leaveBalance) {
+          setLeaveData((prev) => ({ ...prev, balance: res.data.employee.leaveBalance }));
+        }
         setIsEditingProfile(false);
       }
     } catch (err) {
@@ -1087,6 +1100,38 @@ const EmployeeContextView = () => {
               </label>
             </div>
 
+            {/* Personal earned-leave rate — overrides the department's for this one person. */}
+            <div className="pt-4 border-t border-slate-200 dark:border-slate-800 text-xs">
+              <h4 className="font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-1">
+                <CalendarDays className="w-4 h-4 text-brand-500" />
+                Monthly Paid Leave
+              </h4>
+              <p className="text-slate-500 dark:text-slate-400 mb-3">
+                Set this only when this employee should get a different number of paid leave days than
+                their department. Leave it empty to use the department rate. Applies from this month.
+              </p>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min="0"
+                  max="31"
+                  step="0.5"
+                  disabled={!isEditingProfile}
+                  value={editFormData.earnedPerMonth ?? ''}
+                  onChange={(e) => setEditFormData({ ...editFormData, earnedPerMonth: e.target.value })}
+                  placeholder="Department rate"
+                  className="theme-input w-40"
+                />
+                <span className="text-slate-500 dark:text-slate-400">days / month</span>
+              </div>
+              {leaveData.balance?.earnedPerMonth !== undefined && (
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Currently {leaveData.balance.earnedPerMonth} days / month ·{' '}
+                  {rateSourceLabel(leaveData.balance.rateSource, inspectedEmployee?.department)}
+                </p>
+              )}
+            </div>
+
             {/* Address & Emergency Contact */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-slate-200 dark:border-slate-800 text-xs">
               <div className="space-y-3">
@@ -1367,7 +1412,7 @@ const EmployeeContextView = () => {
                 {leaveData.balance?.earnedPerMonth ?? 0} Days / Month
               </div>
               <p className="text-xs text-blue-600 dark:text-blue-400">
-                {inspectedEmployee?.department ? `${inspectedEmployee.department} policy` : 'Department policy'}
+                {rateSourceLabel(leaveData.balance?.rateSource, inspectedEmployee?.department)}
               </p>
             </div>
 

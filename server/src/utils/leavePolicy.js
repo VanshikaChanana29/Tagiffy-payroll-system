@@ -1,6 +1,7 @@
 /**
  * Earned leave: each department gets a fixed number of days credited at the
- * start of every month, and whatever is unused lapses at month end.
+ * start of every month, and whatever is unused lapses at month end. An
+ * employee can carry a personal rate that overrides their department's.
  *
  * Nothing is stored as a running balance. A month's balance is always
  *   credit for that month − earned leave days (pending + approved) in that month
@@ -40,12 +41,27 @@ const loadPolicyContext = async (settings = null) => {
   return { defaultRate, deptRates };
 };
 
-const earnedPerMonthFor = (department, ctx) =>
-  ctx.deptRates.has(department) ? ctx.deptRates.get(department) : ctx.defaultRate;
+const hasRate = (value) => value !== null && value !== undefined;
+
+/**
+ * Where a user's monthly rate comes from: their own override, else their
+ * department's rate, else the company default.
+ */
+const resolveEarnedRate = (user, ctx) => {
+  if (hasRate(user.leavePolicy?.earnedPerMonth)) {
+    return { rate: user.leavePolicy.earnedPerMonth, source: 'employee' };
+  }
+  if (ctx.deptRates.has(user.department)) {
+    return { rate: ctx.deptRates.get(user.department), source: 'department' };
+  }
+  return { rate: ctx.defaultRate, source: 'company' };
+};
+
+const earnedPerMonthFor = (user, ctx) => resolveEarnedRate(user, ctx).rate;
 
 /** What one employee is credited for one month, honouring their joining date. */
 const creditForMonth = (user, month, ctx) => {
-  const rate = earnedPerMonthFor(user.department, ctx);
+  const rate = earnedPerMonthFor(user, ctx);
   if (!user.joiningDate) return rate;
 
   const joining = new Date(user.joiningDate);
@@ -124,9 +140,11 @@ const getEarnedUsage = async (userIds, months, excludeLeaveId = null) => {
 const buildBalance = (user, month, usage, ctx) => {
   const credit = creditForMonth(user, month, ctx);
   const entry = usage.get(user._id.toString())?.get(month) || { approved: 0, pending: 0 };
+  const { rate, source } = resolveEarnedRate(user, ctx);
   return {
     month,
-    earnedPerMonth: earnedPerMonthFor(user.department, ctx),
+    earnedPerMonth: rate,
+    rateSource: source,
     credit,
     used: entry.approved,
     pending: entry.pending,
@@ -195,7 +213,8 @@ const allocateEarned = async (user, monthlyDays, { excludeLeaveId = null, ctx = 
 
 /**
  * Validates an admin-entered monthly credit: 0-31 days in half-day steps.
- * With allowNull (departments), an empty value means "use the company default".
+ * With allowNull (departments, employees), an empty value means "fall back to
+ * the next level up".
  * Returns { value } or { error }.
  */
 const parseEarnedPerMonth = (raw, { allowNull = false } = {}) => {
