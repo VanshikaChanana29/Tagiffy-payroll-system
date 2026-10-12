@@ -85,6 +85,8 @@ const EmployeeContextView = () => {
   const [savingProfile, setSavingProfile] = useState(false);
   // Company-wide shift, shown next to the personal-timing override for context.
   const [orgShift, setOrgShift] = useState(null);
+  // Pages from Org Settings, for assigning creators.
+  const [allPages, setAllPages] = useState([]);
 
   // Add Document Modal
   const [showAddDocModal, setShowAddDocModal] = useState(false);
@@ -156,6 +158,7 @@ const EmployeeContextView = () => {
           },
           attendanceExempt: !!u.attendanceExempt,
           earnedPerMonth: u.leavePolicy?.earnedPerMonth ?? '',
+          pages: (u.pages || []).map(String),
         });
       }
 
@@ -271,6 +274,12 @@ const EmployeeContextView = () => {
       .get('/org-settings')
       .then((res) => {
         if (res.data.success) setOrgShift(res.data.settings);
+      })
+      .catch(() => {});
+    api
+      .get('/pages')
+      .then((res) => {
+        if (res.data.success) setAllPages(res.data.pages);
       })
       .catch(() => {});
   }, []);
@@ -922,6 +931,73 @@ const EmployeeContextView = () => {
                   <option value="Inactive">Inactive</option>
                   <option value="On Leave">On Leave</option>
                 </select>
+              </div>
+            </div>
+
+            {/* Pages — optional, for creators. One person can work on several pages
+                and one page can have several creators. Pages are created in Org Settings. */}
+            <div className="pt-4 border-t border-slate-200 dark:border-slate-800 text-xs">
+              <h4 className="font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-1">
+                <FileText className="w-4 h-4 text-brand-500" />
+                Pages
+              </h4>
+              <p className="text-slate-500 dark:text-slate-400 mb-3">
+                Optional. Pick the pages this employee creates for. Add new pages in Org Settings → Pages.
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                {(editFormData.pages || []).map((pid) => {
+                  const page = allPages.find((p) => p._id === pid);
+                  return (
+                    <span
+                      key={pid}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-brand-500/10 text-brand-700 dark:text-brand-300 font-semibold"
+                    >
+                      {page?.name || 'Deleted page'}
+                      {isEditingProfile && (
+                        <button
+                          type="button"
+                          aria-label={`Remove ${page?.name || 'page'}`}
+                          onClick={() =>
+                            setEditFormData({
+                              ...editFormData,
+                              pages: editFormData.pages.filter((id) => id !== pid),
+                            })
+                          }
+                          className="hover:text-rose-600"
+                        >
+                          <XCircle className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </span>
+                  );
+                })}
+                {!isEditingProfile && !(editFormData.pages || []).length && (
+                  <span className="text-slate-400">No pages assigned</span>
+                )}
+                {isEditingProfile && (
+                  <select
+                    value=""
+                    onChange={(e) =>
+                      e.target.value &&
+                      setEditFormData({
+                        ...editFormData,
+                        pages: [...(editFormData.pages || []), e.target.value],
+                      })
+                    }
+                    className="theme-input w-48"
+                  >
+                    <option value="">
+                      {allPages.length ? '+ Add page' : 'No pages created yet'}
+                    </option>
+                    {allPages
+                      .filter((p) => !(editFormData.pages || []).includes(p._id))
+                      .map((p) => (
+                        <option key={p._id} value={p._id}>
+                          {p.name}
+                        </option>
+                      ))}
+                  </select>
+                )}
               </div>
             </div>
 

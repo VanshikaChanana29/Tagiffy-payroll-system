@@ -1,6 +1,8 @@
+const mongoose = require('mongoose');
 const User = require('../models/User');
 const Department = require('../models/Department');
 const Designation = require('../models/Designation');
+const Page = require('../models/Page');
 const {
   DOCUMENTS_FOLDER,
   formatFileSize,
@@ -808,6 +810,7 @@ const updateEmployee = async (req, res) => {
         customShift,
         attendanceExempt,
         officeLocationId,
+        pages,
       } = req.body;
 
       if (department || designation) {
@@ -883,6 +886,16 @@ const updateEmployee = async (req, res) => {
         const { value, error } = resolveOfficeLocationId(officeLocationId, await OrgSettings.getSettings());
         if (error) return res.status(400).json({ success: false, message: error });
         employee.officeLocationId = value;
+      }
+      // Pages this person creates for; an empty list unassigns them all.
+      if (pages !== undefined) {
+        const ids = Array.isArray(pages) ? [...new Set(pages.map(String))] : null;
+        const valid = ids && ids.every((pid) => mongoose.Types.ObjectId.isValid(pid));
+        const found = valid && ids.length ? await Page.countDocuments({ _id: { $in: ids } }) : 0;
+        if (!valid || found !== ids.length) {
+          return res.status(400).json({ success: false, message: 'One or more selected pages no longer exist.' });
+        }
+        employee.pages = ids;
       }
     }
 

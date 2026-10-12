@@ -55,6 +55,12 @@ const userSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       default: null,
     },
+    // Content pages (Org Settings → Pages) this person creates for. Optional,
+    // and many-to-many: a creator can work on several pages.
+    pages: {
+      type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Page' }],
+      default: [],
+    },
     phone: {
       type: String,
       default: '',

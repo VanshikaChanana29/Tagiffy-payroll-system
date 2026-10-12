@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Building, Briefcase, Plus, Trash2, Edit2, X, Save, Check, AlertCircle, CalendarDays } from 'lucide-react';
+import { Building, Briefcase, FileText, Plus, Trash2, Edit2, X, Save, Check, AlertCircle, CalendarDays } from 'lucide-react';
 import api from '../../api/client';
 import ShiftSettingsPanel from '../../components/admin/ShiftSettingsPanel';
 // import SalaryStructurePanel from '../../components/admin/SalaryStructurePanel';
@@ -8,11 +8,15 @@ import OfficeLocationPanel from '../../components/admin/OfficeLocationPanel';
 import { useToast } from '../../context/ToastContext';
 import Tooltip from '../../components/common/Tooltip';
 
+// Singular labels for the three master lists on this page.
+const TAB_LABELS = { departments: 'Department', designations: 'Designation', pages: 'Page' };
+
 const OrgSettingsPage = () => {
   const toast = useToast();
   const [tab, setTab] = useState('departments');
   const [departments, setDepartments] = useState([]);
   const [designations, setDesignations] = useState([]);
+  const [pages, setPages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
 
@@ -28,13 +32,15 @@ const OrgSettingsPage = () => {
   const fetchAll = async () => {
     try {
       setLoading(true);
-      const [deptRes, desigRes, orgRes] = await Promise.all([
+      const [deptRes, desigRes, pageRes, orgRes] = await Promise.all([
         api.get('/departments'),
         api.get('/designations'),
+        api.get('/pages'),
         api.get('/org-settings'),
       ]);
       if (deptRes.data.success) setDepartments(deptRes.data.departments);
       if (desigRes.data.success) setDesignations(desigRes.data.designations);
+      if (pageRes.data.success) setPages(pageRes.data.pages);
       if (orgRes.data.success) {
         const rate = orgRes.data.settings.leavePolicy?.earnedPerMonth ?? 1;
         setDefaultEarned(String(rate));
@@ -68,6 +74,8 @@ const OrgSettingsPage = () => {
         department: '',
         earnedPerMonth: item.leavePolicy?.earnedPerMonth ?? '',
       });
+    } else if (tab === 'pages') {
+      setForm({ name: item.name, code: '', description: item.description || '', title: '', department: '', earnedPerMonth: '' });
     } else {
       setForm({ name: '', code: '', description: item.description || '', title: item.title, department: item.department?._id || '' });
     }
@@ -89,6 +97,12 @@ const OrgSettingsPage = () => {
         const res = editing
           ? await api.put(`/departments/${editing._id}`, payload)
           : await api.post('/departments', payload);
+        if (res.data.success) toast.success(res.data.message);
+      } else if (tab === 'pages') {
+        const payload = { name: form.name, description: form.description };
+        const res = editing
+          ? await api.put(`/pages/${editing._id}`, payload)
+          : await api.post('/pages', payload);
         if (res.data.success) toast.success(res.data.message);
       } else {
         const payload = { title: form.title, department: form.department || null, description: form.description };
@@ -124,10 +138,13 @@ const OrgSettingsPage = () => {
   };
 
   const handleDelete = async (item) => {
-    const label = tab === 'departments' ? item.name : item.title;
-    if (!window.confirm(`Delete '${label}'? This cannot be undone.`)) return;
+    const label = tab === 'designations' ? item.title : item.name;
+    const assignedNote = item.employees?.length
+      ? ` It will be removed from ${item.employees.length} employee(s).`
+      : '';
+    if (!window.confirm(`Delete '${label}'?${assignedNote} This cannot be undone.`)) return;
     try {
-      const endpoint = tab === 'departments' ? `/departments/${item._id}` : `/designations/${item._id}`;
+      const endpoint = `/${tab}/${item._id}`;
       const res = await api.delete(endpoint);
       if (res.data.success) {
         toast.success(res.data.message);
@@ -138,7 +155,8 @@ const OrgSettingsPage = () => {
     }
   };
 
-  const list = tab === 'departments' ? departments : designations;
+  const list = { departments, designations, pages }[tab];
+  const tabLabel = TAB_LABELS[tab];
 
   return (
     <div className="space-y-6">
@@ -148,7 +166,7 @@ const OrgSettingsPage = () => {
             Organization Settings
           </h2>
           <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">
-            Manage the master list of departments and designations used across the organization.
+            Manage the master list of departments, designations and pages used across the organization.
           </p>
         </div>
         <button
@@ -156,7 +174,7 @@ const OrgSettingsPage = () => {
           className="px-4 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-xs font-semibold flex items-center gap-2 transition-all shrink-0"
         >
           <Plus className="w-4 h-4" />
-          <span>Add {tab === 'departments' ? 'Department' : 'Designation'}</span>
+          <span>Add {tabLabel}</span>
         </button>
       </div>
 
@@ -183,6 +201,17 @@ const OrgSettingsPage = () => {
         >
           <Briefcase className="w-4 h-4" />
           Designations
+        </button>
+        <button
+          onClick={() => setTab('pages')}
+          className={`px-4 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all ${
+            tab === 'pages'
+              ? 'bg-white dark:bg-slate-800 text-brand-600 dark:text-brand-300 shadow-sm'
+              : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+          }`}
+        >
+          <FileText className="w-4 h-4" />
+          Pages
         </button>
       </div>
 
@@ -233,7 +262,7 @@ const OrgSettingsPage = () => {
           <div className="p-12 text-center text-slate-500 dark:text-slate-400">
             <AlertCircle className="w-8 h-8 text-slate-400 mx-auto mb-2" />
             <p className="text-sm">
-              No {tab} yet. Click "Add {tab === 'departments' ? 'Department' : 'Designation'}" to create one.
+              No {tab} yet. Click "Add {tabLabel}" to create one.
             </p>
           </div>
         ) : (
@@ -241,10 +270,11 @@ const OrgSettingsPage = () => {
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-100 dark:bg-slate-950/80 text-slate-600 dark:text-slate-400 uppercase tracking-wider font-semibold border-b border-slate-200 dark:border-slate-800">
                 <tr>
-                  <th className="px-6 py-4">{tab === 'departments' ? 'Department' : 'Designation'}</th>
+                  <th className="px-6 py-4">{tabLabel}</th>
                   {tab === 'departments' && <th className="px-6 py-4">Code</th>}
                   {tab === 'departments' && <th className="px-6 py-4">Earned Leave / month</th>}
                   {tab === 'designations' && <th className="px-6 py-4">Department</th>}
+                  {tab === 'pages' && <th className="px-6 py-4">Creators</th>}
                   <th className="px-6 py-4">Description</th>
                   <th className="px-6 py-4 text-right">Actions</th>
                 </tr>
@@ -253,7 +283,7 @@ const OrgSettingsPage = () => {
                 {list.map((item) => (
                   <tr key={item._id} className="hover:bg-slate-50 dark:hover:bg-slate-850/50 transition-colors">
                     <td className="px-6 py-4 font-bold text-slate-900 dark:text-white">
-                      {tab === 'departments' ? item.name : item.title}
+                      {tab === 'designations' ? item.title : item.name}
                     </td>
                     {tab === 'departments' && (
                       <td className="px-6 py-4 font-mono text-slate-600 dark:text-slate-300">{item.code || '—'}</td>
@@ -272,19 +302,38 @@ const OrgSettingsPage = () => {
                     {tab === 'designations' && (
                       <td className="px-6 py-4 text-slate-600 dark:text-slate-300">{item.department?.name || '—'}</td>
                     )}
+                    {tab === 'pages' && (
+                      <td className="px-6 py-4 text-slate-600 dark:text-slate-300">
+                        {item.employees?.length ? (
+                          <div className="flex flex-wrap gap-1.5 max-w-md">
+                            {item.employees.map((emp) => (
+                              <span
+                                key={emp._id}
+                                title={emp.designation}
+                                className="px-2 py-0.5 rounded-md bg-brand-500/10 text-brand-700 dark:text-brand-300 font-semibold"
+                              >
+                                {emp.name}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-slate-400">No one assigned</span>
+                        )}
+                      </td>
+                    )}
                     <td className="px-6 py-4 text-slate-500 dark:text-slate-400">{item.description || '—'}</td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-1.5">
-                        <Tooltip label={tab === 'departments' ? 'Edit department' : 'Edit designation'} side="top">
-                          <button aria-label={tab === 'departments' ? 'Edit department' : 'Edit designation'}
+                        <Tooltip label={`Edit ${tabLabel.toLowerCase()}`} side="top">
+                          <button aria-label={`Edit ${tabLabel.toLowerCase()}`}
                             onClick={() => openEditModal(item)}
                             className="p-1.5 rounded-lg bg-brand-600/15 hover:bg-brand-600 text-brand-700 dark:text-brand-300 hover:text-white transition-all"
                           >
                             <Edit2 className="w-4 h-4" />
                           </button>
                         </Tooltip>
-                        <Tooltip label={tab === 'departments' ? 'Delete department' : 'Delete designation'} side="top">
-                          <button aria-label={tab === 'departments' ? 'Delete department' : 'Delete designation'}
+                        <Tooltip label={`Delete ${tabLabel.toLowerCase()}`} side="top">
+                          <button aria-label={`Delete ${tabLabel.toLowerCase()}`}
                             onClick={() => handleDelete(item)}
                             className="p-1.5 rounded-lg bg-rose-600/15 hover:bg-rose-600 text-rose-700 dark:text-rose-300 hover:text-white transition-all"
                           >
@@ -307,7 +356,7 @@ const OrgSettingsPage = () => {
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl max-w-md w-full p-6 sm:p-8 shadow-soft space-y-6 my-8 transition-colors">
             <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4">
               <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-                {editing ? 'Edit' : 'Add'} {tab === 'departments' ? 'Department' : 'Designation'}
+                {editing ? 'Edit' : 'Add'} {tabLabel}
               </h3>
               <Tooltip label="Close" side="left">
                 <button aria-label="Close"
@@ -363,6 +412,21 @@ const OrgSettingsPage = () => {
                     </p>
                   </div>
                 </>
+              ) : tab === 'pages' ? (
+                <div>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Page Name *</label>
+                  <input
+                    type="text"
+                    required
+                    value={form.name}
+                    onChange={(e) => setForm({ ...form, name: e.target.value })}
+                    placeholder="e.g. DESH"
+                    className="theme-input w-full"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    Assign creators to this page from their employee profile.
+                  </p>
+                </div>
               ) : (
                 <>
                   <div>
