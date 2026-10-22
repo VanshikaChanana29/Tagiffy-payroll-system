@@ -896,6 +896,20 @@ const EmployeeDirectoryPage = () => {
                     className="theme-input w-full"
                   />
                 </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Joining Date *</label>
+                  <input
+                    type="date"
+                    required
+                    value={newEmployee.joiningDate}
+                    onChange={(e) => setNewEmployee({ ...newEmployee, joiningDate: e.target.value })}
+                    className="theme-input w-full"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    Onboarding a few days late? Set the day they actually joined.
+                  </p>
+                </div>
               </div>
 
                 <div className="sm:col-span-2">
@@ -1135,6 +1149,18 @@ const EmployeeDirectoryPage = () => {
                     value={selectedEmployee.phone || ''}
                     onChange={(e) =>
                       setSelectedEmployee({ ...selectedEmployee, phone: e.target.value })
+                    }
+                    className="theme-input w-full"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Joining Date</label>
+                  <input
+                    type="date"
+                    value={selectedEmployee.joiningDate ? String(selectedEmployee.joiningDate).slice(0, 10) : ''}
+                    onChange={(e) =>
+                      setSelectedEmployee({ ...selectedEmployee, joiningDate: e.target.value })
                     }
                     className="theme-input w-full"
                   />
