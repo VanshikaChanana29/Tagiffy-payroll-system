@@ -32,6 +32,10 @@ const CERTIFICATE_SLOTS = [
 // on uploads, which live in file storage (R2).
 const SIGNATURES_DIR = path.resolve(__dirname, '../../assets/signatures');
 
+// The Taggify wordmark in white with its orange accent, for the black block.
+// Falls back to the company name as text if the file is missing.
+const LOGO_PATH = path.resolve(__dirname, '../../assets/certificate-logo.png');
+
 /**
  * The signature / stamp images to draw, as { key: Buffer }. Uploaded images
  * win; a missing slot leaves that line blank. Never throws — a certificate
@@ -89,15 +93,23 @@ const drawCertificate = (doc, { employee, month, year, companyName = 'Taggify', 
   doc.rect(62, 62, W - 124, H - 124).lineWidth(1.2).strokeColor(INK).stroke();
 
   // --- Logo block straddling the top of the frame ---
-  const logoW = 136;
+  const logoW = 170;
   const logoH = 70;
   doc.rect(CX - logoW / 2, 24, logoW, logoH).fill('#0a0a0b');
-  doc.font('Helvetica-Bold').fontSize(22).fillColor('#ffffff')
-    .text(companyName.toUpperCase(), CX - logoW / 2, 48, {
-      width: logoW,
+  if (fs.existsSync(LOGO_PATH)) {
+    doc.image(LOGO_PATH, CX - logoW / 2 + 16, 24, {
+      fit: [logoW - 32, logoH],
       align: 'center',
-      characterSpacing: 1,
+      valign: 'center',
     });
+  } else {
+    doc.font('Helvetica-Bold').fontSize(22).fillColor('#ffffff')
+      .text(companyName.toUpperCase(), CX - logoW / 2, 48, {
+        width: logoW,
+        align: 'center',
+        characterSpacing: 1,
+      });
+  }
 
   // --- Heading ---
   // characterSpacing also pads after the last letter, so shift right by half
