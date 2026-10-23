@@ -41,8 +41,10 @@ const isConfigured = () => Boolean(process.env.BREVO_API_KEY && process.env.EMAI
  * connection then just hung until timeout — Render's network doesn't
  * reliably carry outbound SMTP at all. Brevo's API runs over plain HTTPS
  * (port 443), which isn't affected by any of that.
+ *
+ * `attachments` is an optional list of { name, content: Buffer }.
  */
-const sendEmail = async ({ to, subject, text, html }) => {
+const sendEmail = async ({ to, subject, text, html, attachments = [] }) => {
   if (!to) return false;
 
   if (!isConfigured()) {
@@ -70,6 +72,10 @@ const sendEmail = async ({ to, subject, text, html }) => {
         subject,
         textContent: text,
         htmlContent: html || buildEmailHtml({ subject, text }),
+        // Brevo takes attachments as base64; `content` here is a Buffer.
+        ...(attachments.length > 0 && {
+          attachment: attachments.map((a) => ({ name: a.name, content: a.content.toString('base64') })),
+        }),
       }),
     });
 

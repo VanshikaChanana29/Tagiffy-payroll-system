@@ -39,3 +39,8 @@ server/.mongodb-data/
 # Uploaded employee documents (real files)
 server/uploads/
 uploads/
+
+# Real director signatures / company stamp for certificates — never commit
+# (the repo is public). Upload them through the app instead.
+server/assets/signatures/*.png
+server/assets/signatures/*.jpg

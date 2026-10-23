@@ -28,6 +28,7 @@ const Topbar = ({ onMenuClick }) => {
     if (path.includes('/leaves')) return isAdmin ? 'Time Off Approvals' : 'My Time Off';
     if (path.includes('/payroll') || path.includes('/salary')) return isAdmin ? 'Payroll' : 'My Payslips';
     if (path.includes('/org-settings')) return 'Org Settings';
+    if (path.includes('/awards')) return 'Employee of the Month';
     if (path.includes('/profile')) return 'My Profile';
     return 'Taggify';
   };

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bell, CheckCheck, CalendarClock, MapPinOff, FileText, Wallet, ClipboardCheck, Clock, Home, Landmark, Receipt, KeyRound, ChevronRight } from 'lucide-react';
+import { Bell, CheckCheck, CalendarClock, MapPinOff, FileText, Wallet, ClipboardCheck, Clock, Home, Landmark, Receipt, KeyRound, ChevronRight, Trophy } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { useNotifications } from '../../context/NotificationContext';
 import { useAuth } from '../../context/AuthContext';
@@ -32,6 +32,8 @@ const ICONS_BY_TYPE = {
   reimbursement_rejected: Receipt,
   reimbursement_cancelled: Receipt,
   password_reset_by_hr: KeyRound,
+  award_received: Trophy,
+  award_announced: Trophy,
 };
 
 // Which area a notification is about, from its type prefix.
@@ -42,6 +44,7 @@ const areaOf = (type = '') => {
   if (type.startsWith('bank_details_')) return 'profile';
   if (type.startsWith('reimbursement_')) return 'reimbursements';
   if (type.startsWith('payslip_')) return 'payroll';
+  if (type.startsWith('award_')) return 'awards';
   return null;
 };
 
@@ -76,6 +79,9 @@ const NotificationBell = () => {
     const area = areaOf(n.type);
     const subject = n.subject;
     const aboutSomeoneElse = subject && subject._id !== myId;
+
+    // Employee of the Month winners are shown on the dashboard.
+    if (area === 'awards') return { path: isAdmin ? '/admin' : '/employee' };
 
     if (aboutSomeoneElse && isAdmin) {
       if (area === 'reimbursements') return { path: '/admin/reimbursements' };

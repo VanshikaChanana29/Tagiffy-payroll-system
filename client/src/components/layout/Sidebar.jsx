@@ -13,6 +13,7 @@ import {
   Receipt,
   Wallet,
   User,
+  Trophy,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
@@ -83,6 +84,7 @@ const Sidebar = ({ isOpen, onClose }) => {
     { label: 'Reimbursements', path: '/admin/reimbursements', icon: Receipt },
     { label: 'Payroll', path: '/admin/payroll', icon: DollarSign },
     { label: 'Misc Expenses', path: '/admin/expenses', icon: Wallet },
+    { label: 'Employee of the Month', path: '/admin/awards', icon: Trophy },
     { label: 'Org Settings', path: '/admin/org-settings', icon: Building2 },
   ];
 

@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import api from '../../api/client';
+import EmployeeOfMonthCard from '../../components/awards/EmployeeOfMonthCard';
 import { format } from 'date-fns';
 import { leaveTitle } from '../../utils/leave';
 import { formatHours } from '../../utils/formatHours';
@@ -179,6 +180,8 @@ const AdminDashboard = () => {
           </div>
         </div>
       </div>
+
+      <EmployeeOfMonthCard />
 
       {/* KPI Cards Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

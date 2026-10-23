@@ -69,6 +69,7 @@ app.use('/api/salary-advances', require('./routes/salaryAdvanceRoutes'));
 app.use('/api/holidays', require('./routes/holidayRoutes'));
 app.use('/api/notifications', require('./routes/notificationRoutes'));
 app.use('/api/reimbursements', require('./routes/reimbursementRoutes'));
+app.use('/api/awards', require('./routes/awardRoutes'));
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

@@ -219,7 +219,43 @@ const uploadExpenseDocs = (req, res, next) => {
   });
 };
 
+// --- Certificate signatures / company stamp ---------------------------------
+
+const CERTIFICATES_FOLDER = 'certificates';
+const MAX_SIGNATURE_BYTES = 2 * 1024 * 1024; // 2 MB
+// The PDF library draws PNG and JPEG only.
+const ALLOWED_SIGNATURE_TYPES = { 'image/png': '.png', 'image/jpeg': '.jpg' };
+
+const signatureUpload = multer({
+  storage: multer.memoryStorage(),
+  fileFilter: (req, file, cb) => {
+    if (!ALLOWED_SIGNATURE_TYPES[file.mimetype]) {
+      return cb(new Error('Please choose a PNG or JPG image.'));
+    }
+    cb(null, true);
+  },
+  limits: { fileSize: MAX_SIGNATURE_BYTES, files: 1 },
+});
+
+const uploadCertificateImage = (req, res, next) => {
+  signatureUpload.single('image')(req, res, (err) => {
+    if (err) {
+      const message =
+        err.code === 'LIMIT_FILE_SIZE'
+          ? `Image is too large. Maximum allowed size is ${MAX_SIGNATURE_BYTES / (1024 * 1024)} MB.`
+          : err.message || 'Image upload failed';
+      return res.status(400).json({ success: false, message });
+    }
+    if (req.file) {
+      req.file.filename = `${req.params.key}-${uniqueSuffix(1e12)}${ALLOWED_SIGNATURE_TYPES[req.file.mimetype]}`;
+    }
+    next();
+  });
+};
+
 module.exports = {
+  uploadCertificateImage,
+  CERTIFICATES_FOLDER,
   uploadExpenseDocs,
   EXPENSES_FOLDER,
   MAX_EXPENSE_FILES,

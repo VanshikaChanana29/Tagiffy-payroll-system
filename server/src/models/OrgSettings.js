@@ -12,6 +12,11 @@ const orgSettingsSchema = new mongoose.Schema(
 
     companyName: { type: String, default: 'Taggify' },
 
+    // Uploaded signature / stamp images for Employee of the Month certificates,
+    // keyed by slot (see CERTIFICATE_SLOTS in utils/certificatePdf.js) to the
+    // stored filename in file storage (R2 in production).
+    certificateImages: { type: Map, of: String, default: {} },
+
     // Shift window in 24-hour "HH:mm", interpreted in the server's timezone.
     shiftStart: { type: String, default: '09:30' },
     shiftEnd: { type: String, default: '18:30' },

@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import ApplyLeaveModal from '../../components/leave/ApplyLeaveModal';
+import EmployeeOfMonthCard from '../../components/awards/EmployeeOfMonthCard';
 import api from '../../api/client';
 import { format } from 'date-fns';
 import { leaveTitle } from '../../utils/leave';
@@ -243,6 +244,8 @@ const EmployeeDashboard = () => {
           </div>
         </div>
       </div>
+
+      <EmployeeOfMonthCard />
 
       {/* KPI Overview Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">

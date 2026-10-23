@@ -18,6 +18,7 @@ import MiscExpensesPage from './pages/admin/MiscExpensesPage';
 import PayrollManagementPage from './pages/admin/PayrollManagementPage';
 import EmployeeContextView from './pages/admin/EmployeeContextView';
 import OrgSettingsPage from './pages/admin/OrgSettingsPage';
+import EmployeeOfMonthPage from './pages/admin/EmployeeOfMonthPage';
 import EmployeeDashboard from './pages/employee/EmployeeDashboard';
 import TeamDirectoryPage from './pages/manager/TeamDirectoryPage';
 import MyAttendancePage from './pages/employee/MyAttendancePage';
@@ -70,6 +71,7 @@ function App() {
                     <Route path="/admin/reimbursements" element={<ReimbursementApprovalPage />} />
                     <Route path="/admin/payroll" element={<PayrollManagementPage />} />
                     <Route path="/admin/expenses" element={<MiscExpensesPage />} />
+                    <Route path="/admin/awards" element={<EmployeeOfMonthPage />} />
                     <Route path="/admin/org-settings" element={<OrgSettingsPage />} />
                     <Route path="/admin/profile" element={<ProfilePage />} />
                     <Route path="/admin/employee-view" element={<EmployeeContextView />} />

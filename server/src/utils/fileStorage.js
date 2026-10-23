@@ -113,4 +113,23 @@ const sendStoredFile = async (res, folder, name, { contentType, downloadName, ca
   return true;
 };
 
-module.exports = { saveFile, deleteFile, sendStoredFile, usingR2: useR2 };
+/** Reads a stored file into a Buffer, or null when it does not exist. */
+const readFile = async (folder, name) => {
+  if (useR2) {
+    try {
+      const obj = await s3.send(new S3Commands.GetObjectCommand({ Bucket: R2_BUCKET, Key: objectKey(folder, name) }));
+      return Buffer.from(await obj.Body.transformToByteArray());
+    } catch (err) {
+      if (err.name === 'NoSuchKey' || err.$metadata?.httpStatusCode === 404) return null;
+      throw err;
+    }
+  }
+  try {
+    return await fs.promises.readFile(localPath(folder, name));
+  } catch (err) {
+    if (err.code === 'ENOENT') return null;
+    throw err;
+  }
+};
+
+module.exports = { saveFile, readFile, deleteFile, sendStoredFile, usingR2: useR2 };
