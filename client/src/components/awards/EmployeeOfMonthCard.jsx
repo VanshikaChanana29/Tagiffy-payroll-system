@@ -117,20 +117,24 @@ const EmployeeOfMonthCard = () => {
                   {isMe && <span className="badge-warning">That's you! 🎉</span>}
                 </div>
                 <div className="text-[11px] theme-muted truncate">{emp.designation}</div>
-                <span className="badge-brand mt-1.5">{award.department}</span>
+                <div className="mt-1.5">
+                  <span className="badge-brand">{award.department}</span>
+                </div>
                 {award.citation && (
                   <p className="mt-2 text-xs italic text-slate-600 dark:text-slate-300">“{award.citation}”</p>
                 )}
                 {isMe && (
-                  <button
-                    type="button"
-                    onClick={() => handleDownload(award)}
-                    disabled={downloading === award._id}
-                    className="btn-primary mt-3 !py-1.5 !text-xs"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    {downloading === award._id ? 'Preparing…' : 'Download certificate'}
-                  </button>
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => handleDownload(award)}
+                      disabled={downloading === award._id}
+                      className="btn-primary mt-3 !py-1.5 !text-xs"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      {downloading === award._id ? 'Preparing…' : 'Download certificate'}
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
