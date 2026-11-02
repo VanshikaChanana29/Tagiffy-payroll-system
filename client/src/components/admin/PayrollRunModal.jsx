@@ -81,13 +81,22 @@ const PayrollRunModal = ({ month, year, onClose, onComplete }) => {
   const advanceOwed = (p) =>
     p.advanceRecovery ? p.advanceRecovery.total + p.advanceRecovery.carryForward : 0;
   const suggestedNet = (p) => p.netBeforeAdvance ?? p.netSalary;
+  // Uploaded incentive; the server adds it on top of HR's typed figure too.
+  const incentive = (p) => p.incentive || 0;
   // What each row will actually pay: HR's figure replaces the whole payslip,
   // unless it matches the suggestion, in which case the breakdown is kept.
   const finalAdvance = (p) =>
-    p.manualPay ? Math.min(advanceOwed(p), enteredAmount(p)) : p.deductions?.advance || 0;
-  const finalNet = (p) => (p.manualPay ? enteredAmount(p) - finalAdvance(p) : p.netSalary);
+    p.manualPay
+      ? Math.min(advanceOwed(p), enteredAmount(p) + incentive(p))
+      : p.deductions?.advance || 0;
+  const finalNet = (p) =>
+    p.manualPay ? enteredAmount(p) + incentive(p) - finalAdvance(p) : p.netSalary;
   const finalGross = (p) =>
-    p.manualPay ? (enteredAmount(p) === suggestedNet(p) ? p.grossSalary : enteredAmount(p)) : p.grossSalary;
+    p.manualPay
+      ? enteredAmount(p) === suggestedNet(p)
+        ? p.grossSalary
+        : enteredAmount(p) + incentive(p)
+      : p.grossSalary;
   const finalLop = (p) =>
     p.manualPay && enteredAmount(p) !== suggestedNet(p) ? 0 : p.lop.lopAmount;
 
@@ -101,9 +110,11 @@ const PayrollRunModal = ({ month, year, onClose, onComplete }) => {
         net: acc.net + finalNet(p),
         lop: acc.lop + finalLop(p),
         advance: acc.advance + finalAdvance(p),
+        incentive: acc.incentive + incentive(p),
       }),
-      { gross: 0, net: 0, lop: 0, advance: 0 }
+      { gross: 0, net: 0, lop: 0, advance: 0, incentive: 0 }
     );
+  const statCount = 4 + (totals.advance > 0 ? 1 : 0) + (totals.incentive > 0 ? 1 : 0);
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
@@ -142,10 +153,15 @@ const PayrollRunModal = ({ month, year, onClose, onComplete }) => {
         ) : (
           <>
             {/* Totals */}
-            <div className={`grid grid-cols-2 gap-3 ${totals.advance > 0 ? 'sm:grid-cols-5' : 'sm:grid-cols-4'}`}>
+            <div
+              className={`grid grid-cols-2 gap-3 ${
+                { 4: 'sm:grid-cols-4', 5: 'sm:grid-cols-5', 6: 'sm:grid-cols-6' }[statCount]
+              }`}
+            >
               {[
                 ['Payslips ready', toGenerate, 'text-slate-900 dark:text-white'],
                 ['Total gross', inr(totals.gross), 'text-slate-900 dark:text-white'],
+                totals.incentive > 0 && ['Incentives', `+ ${inr(totals.incentive)}`, 'text-violet-600 dark:text-violet-400'],
                 ['Loss of pay', `− ${inr(totals.lop)}`, 'text-rose-600 dark:text-rose-400'],
                 totals.advance > 0 && ['Advance recovery', `− ${inr(totals.advance)}`, 'text-amber-600 dark:text-amber-400'],
                 ['Total net', inr(totals.net), 'text-emerald-600 dark:text-emerald-400'],
@@ -195,6 +211,12 @@ const PayrollRunModal = ({ month, year, onClose, onComplete }) => {
                             {inr(p.lop.dayRate)}
                           </div>
                         )}
+                        {incentive(p) > 0 && (
+                          <div className="text-[10px] text-violet-600 dark:text-violet-400 mt-0.5">
+                            Incentive: + {inr(incentive(p))}
+                            {p.manualPay && ' (added on top of the amount you enter)'}
+                          </div>
+                        )}
                         {advanceOwed(p) > 0 && (
                           <div className="text-[10px] text-amber-600 dark:text-amber-400 mt-0.5">
                             Advance salary: {inr(finalAdvance(p))} recovered this month
@@ -218,9 +240,14 @@ const PayrollRunModal = ({ month, year, onClose, onComplete }) => {
                               enteredAmount(p) ? '' : 'border-amber-500/60'
                             }`}
                           />
-                          {finalAdvance(p) > 0 && (
+                          {(finalAdvance(p) > 0 || incentive(p) > 0) && (
                             <span className="text-[10px] text-slate-500 dark:text-slate-400 whitespace-nowrap">
-                              <span className="text-amber-600 dark:text-amber-400">− {inr(finalAdvance(p))}</span>
+                              {incentive(p) > 0 && (
+                                <span className="text-violet-600 dark:text-violet-400">+ {inr(incentive(p))} </span>
+                              )}
+                              {finalAdvance(p) > 0 && (
+                                <span className="text-amber-600 dark:text-amber-400">− {inr(finalAdvance(p))}</span>
+                              )}
                               {' = '}
                               <span className="font-bold text-emerald-600 dark:text-emerald-400">{inr(finalNet(p))}</span>
                             </span>

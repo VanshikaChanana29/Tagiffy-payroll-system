@@ -81,6 +81,33 @@ export const uploadEmployeeSheet = (file) => {
   });
 };
 
+/** Downloads the incentive sheet, pre-filled with every active employee. */
+export const downloadIncentiveTemplate = async () => {
+  const res = await api.get('/payroll/incentives/template', { responseType: 'blob' });
+
+  const blobUrl = window.URL.createObjectURL(
+    new Blob([res.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+  );
+  const link = document.createElement('a');
+  link.href = blobUrl;
+  link.download = 'incentive_upload_template.xlsx';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(blobUrl);
+};
+
+/** Uploads a filled-in incentive sheet (.xlsx/.xls/.csv) for one month. */
+export const uploadIncentiveSheet = (file, { month, year }) => {
+  const form = new FormData();
+  form.append('month', month);
+  form.append('year', year);
+  form.append('file', file);
+  return api.post('/payroll/incentives/upload', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+};
+
 export const MAX_RECEIPT_MB = 5;
 
 /** Submits a reimbursement request, with an optional receipt (PDF or image). */

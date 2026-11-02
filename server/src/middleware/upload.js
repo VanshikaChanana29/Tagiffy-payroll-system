@@ -115,10 +115,10 @@ const formatFileSize = (bytes) => {
 const isRealPdf = (buffer) =>
   Buffer.isBuffer(buffer) && buffer.length >= 5 && buffer.subarray(0, 5).toString('latin1') === '%PDF-';
 
-// --- Bulk employee sheet (Excel/CSV) --------------------------------------
+// --- Bulk sheets: employees, incentives (Excel/CSV) -----------------------
 
 // The sheet is parsed in memory and never written to disk — it only ever
-// produces User documents, so there is nothing worth keeping as a file.
+// produces database records, so there is nothing worth keeping as a file.
 const MAX_SHEET_BYTES = 5 * 1024 * 1024; // 5 MB
 
 const ALLOWED_SHEET_EXTENSIONS = ['.xlsx', '.xls', '.csv'];

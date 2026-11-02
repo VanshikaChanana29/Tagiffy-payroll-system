@@ -12,6 +12,7 @@ const {
   getPendingAdvancesByUser,
   recordAdvanceRecovery,
 } = require('./salaryAdvanceController');
+const { getIncentivesByUser } = require('./incentiveController');
 
 /**
  * Loss-of-pay days for one employee in one month.
@@ -239,6 +240,7 @@ const runPayroll = async (req, res) => {
     const alreadyPaid = new Set(existing.map((s) => s.userId.toString()));
 
     const pendingAdvances = await getPendingAdvancesByUser(employees.map((e) => e._id));
+    const incentives = await getIncentivesByUser(targetMonth, targetYear);
 
     const toProcess = [];
     const skipped = [];
@@ -303,6 +305,15 @@ const runPayroll = async (req, res) => {
       // HR types manual pay before the advance comes off, so the preview hands
       // back that figure for the amount box.
       payslip.netBeforeAdvance = payslip.netSalary;
+
+      // Uploaded incentive goes on top of the pay, including HR's manual
+      // figure, and before any advance is taken back.
+      payslip.incentive = incentives[employee._id.toString()] || 0;
+      if (payslip.incentive > 0) {
+        payslip.grossSalary = round(payslip.grossSalary + payslip.incentive);
+        payslip.netSalary = round(payslip.netSalary + payslip.incentive);
+      }
+
       if (advances.length > 0) {
         const recovery = planAdvanceRecovery(advances, payslip.netSalary);
         payslip.deductions.advance = recovery.total;
@@ -319,8 +330,9 @@ const runPayroll = async (req, res) => {
         net: round(acc.net + p.netSalary),
         lop: round(acc.lop + p.lop.lopAmount),
         advance: round(acc.advance + (p.deductions.advance || 0)),
+        incentive: round(acc.incentive + (p.incentive || 0)),
       }),
-      { gross: 0, net: 0, lop: 0, advance: 0 }
+      { gross: 0, net: 0, lop: 0, advance: 0, incentive: 0 }
     );
 
     if (dryRun) {
@@ -344,6 +356,7 @@ const runPayroll = async (req, res) => {
         basicSalary: payslip.basicSalary,
         hra: payslip.hra,
         allowances: payslip.allowances,
+        incentive: payslip.incentive,
         deductions: payslip.deductions,
         grossSalary: payslip.grossSalary,
         netSalary: payslip.netSalary,
@@ -355,6 +368,9 @@ const runPayroll = async (req, res) => {
             : payslip.lop.lopDays > 0
               ? `Monthly payroll · ${payslip.lop.lopDays} LOP day(s) deducted`
               : 'Monthly payroll run',
+          payslip.incentive > 0
+            ? `Incentive: ₹${payslip.incentive.toLocaleString('en-IN')}`
+            : '',
           payslip.deductions.advance > 0
             ? `Advance salary recovered: ₹${payslip.deductions.advance.toLocaleString('en-IN')} (${payslip.advanceRecovery.allocations.map((a) => a.reason).join('; ')})`
             : '',
