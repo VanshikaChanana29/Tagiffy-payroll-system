@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Trophy, Calendar, Send, Download, Trash2, Mail, MailWarning } from 'lucide-react';
+import { Trophy, Calendar, Send, Download, Trash2, Mail, MailWarning, ImagePlus, X } from 'lucide-react';
 import { format } from 'date-fns';
 import api from '../../api/client';
 import { useToast } from '../../context/ToastContext';
@@ -9,16 +9,22 @@ import {
   resendCertificate,
   deleteAward,
   downloadCertificate,
+  uploadAwardPhoto,
+  deleteAwardPhoto,
   readBlobError,
   MONTHS,
 } from '../../api/awards';
 import { buildInitialsAvatar } from '../../utils/initialsAvatar';
 import CertificateSignaturesPanel from '../../components/awards/CertificateSignaturesPanel';
 
-// Mirrors the server cap: usually one winner per department, sometimes two.
-const MAX_WINNERS_PER_DEPARTMENT = 2;
+// Mirrors the server cap: usually one winner per department, sometimes up to four.
+const MAX_WINNERS_PER_DEPARTMENT = 4;
+const MAX_PHOTO_BYTES = 3 * 1024 * 1024; // matches the server limit
+const PHOTO_TYPES = 'image/jpeg,image/png,image/webp';
 
-const emptyForm = { department: '', employeeId: '', citation: '' };
+const emptyForm = { department: '', employeeId: '', citation: '', photo: null };
+
+const photoTooLarge = (file) => file && file.size > MAX_PHOTO_BYTES;
 
 const EmployeeOfMonthPage = () => {
   const toast = useToast();
@@ -119,6 +125,38 @@ const EmployeeOfMonthPage = () => {
       loadAwards();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to remove the award');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handlePhotoUpload = async (award, file) => {
+    if (!file) return;
+    if (photoTooLarge(file)) {
+      toast.error('Image is too large. Maximum allowed size is 3 MB.');
+      return;
+    }
+    setBusyId(award._id);
+    try {
+      const res = await uploadAwardPhoto(award._id, file);
+      toast.success(res.data.message);
+      loadAwards();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to save the photo');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handlePhotoRemove = async (award) => {
+    if (!window.confirm(`Remove the photo for ${award.employee.name}?`)) return;
+    setBusyId(award._id);
+    try {
+      const res = await deleteAwardPhoto(award._id);
+      toast.success(res.data.message);
+      loadAwards();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to remove the photo');
     } finally {
       setBusyId(null);
     }
@@ -233,6 +271,39 @@ const EmployeeOfMonthPage = () => {
                     <p className="text-[11px] theme-muted mt-1">Shown on the dashboard and in the email.</p>
                   </div>
 
+                  <div>
+                    <label className="theme-label">Photo (optional)</label>
+                    {form.photo ? (
+                      <div className="flex items-center justify-between gap-2 p-2 rounded-lg border border-slate-200 dark:border-slate-800">
+                        <span className="text-xs truncate">{form.photo.name}</span>
+                        <button
+                          type="button"
+                          onClick={() => setForm({ ...form, photo: null })}
+                          className="btn-icon"
+                          aria-label="Remove selected photo"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ) : (
+                      <input
+                        type="file"
+                        accept={PHOTO_TYPES}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0] || null;
+                          if (photoTooLarge(file)) {
+                            toast.error('Image is too large. Maximum allowed size is 3 MB.');
+                            e.target.value = '';
+                            return;
+                          }
+                          setForm({ ...form, photo: file });
+                        }}
+                        className="theme-input w-full text-xs"
+                      />
+                    )}
+                    <p className="text-[11px] theme-muted mt-1">JPG, PNG or WEBP, up to 3 MB. Shown on the dashboard.</p>
+                  </div>
+
                   <button type="submit" disabled={submitting || !form.employeeId} className="btn-primary w-full">
                     <Send className="w-4 h-4" />
                     {submitting ? 'Sending…' : 'Announce & email certificate'}
@@ -267,9 +338,9 @@ const EmployeeOfMonthPage = () => {
                     >
                       <div className="flex items-start gap-3 min-w-0">
                         <img
-                          src={emp.avatar || buildInitialsAvatar(emp.name)}
+                          src={award.photo || emp.avatar || buildInitialsAvatar(emp.name)}
                           alt=""
-                          className="w-10 h-10 rounded-xl object-cover shrink-0 border border-slate-200 dark:border-slate-700"
+                          className="w-14 h-14 rounded-xl object-cover shrink-0 border border-slate-200 dark:border-slate-700"
                         />
                         <div className="min-w-0">
                           <div className="text-sm font-bold text-slate-900 dark:text-white truncate">{emp.name}</div>
@@ -294,7 +365,35 @@ const EmployeeOfMonthPage = () => {
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2 shrink-0">
+                      <div className="flex flex-wrap items-center gap-2 shrink-0">
+                        <label
+                          className={`btn-secondary !py-1.5 !text-xs cursor-pointer ${busy ? 'pointer-events-none opacity-50' : ''}`}
+                          title={award.photo ? 'Replace the photo' : 'Add a photo'}
+                        >
+                          <ImagePlus className="w-3.5 h-3.5" /> {award.photo ? 'Change photo' : 'Add photo'}
+                          <input
+                            type="file"
+                            accept={PHOTO_TYPES}
+                            className="hidden"
+                            disabled={busy}
+                            onChange={(e) => {
+                              handlePhotoUpload(award, e.target.files?.[0]);
+                              e.target.value = '';
+                            }}
+                          />
+                        </label>
+                        {award.photo && (
+                          <button
+                            type="button"
+                            onClick={() => handlePhotoRemove(award)}
+                            disabled={busy}
+                            className="btn-icon"
+                            aria-label={`Remove photo for ${emp.name}`}
+                            title="Remove photo"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => handleDownload(award)}

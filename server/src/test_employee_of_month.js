@@ -1,4 +1,4 @@
-// Employee of the Month: admin names up to 2 winners per department, each gets
+// Employee of the Month: admin names up to 4 winners per department, each gets
 // the certificate PDF by email, and everyone sees the winners.
 //
 // Uses a throwaway in-memory database, and stubs the Brevo API so no real
@@ -136,20 +136,36 @@ async function runEmployeeOfMonthTest() {
     const dup = await makeRequest('/api/awards', 'POST', { employeeId: alex._id, month, year }, adminToken);
     check('Same person cannot win twice in a month', dup.status === 400);
 
-    // Fill the department up to the cap of 2, then one more must be refused.
-    const sameDept = await User.find({
+    // Fill the department up to the cap of 4, then one more must be refused.
+    // The seed may not have enough people in one department, so add test staff.
+    const CAP = 4;
+    const existing = await User.find({
       department: alex.department,
       status: 'Active',
       _id: { $ne: alex._id },
-    }).limit(2);
-    if (sameDept.length >= 2) {
-      const second = await makeRequest('/api/awards', 'POST', { employeeId: sameDept[0]._id, month, year }, adminToken);
-      check('Second winner in the same department allowed', second.status === 201, JSON.stringify(second.data));
-      const third = await makeRequest('/api/awards', 'POST', { employeeId: sameDept[1]._id, month, year }, adminToken);
-      check('Third winner in the same department refused', third.status === 400, JSON.stringify(third.data));
-    } else {
-      console.log(`  ⏭️  Skipped department cap check — ${alex.department} has too few people in the seed`);
+    }).limit(CAP);
+    const extras = [];
+    for (let i = existing.length; i < CAP; i += 1) {
+      extras.push(
+        await User.create({
+          name: `Cap Test ${i}`,
+          email: `cap-test-${i}-${Date.now()}@test.local`,
+          password: 'password123',
+          role: 'employee',
+          employeeId: `CAPT${Date.now()}${i}`,
+          department: alex.department,
+          designation: alex.designation,
+          status: 'Active',
+        })
+      );
     }
+    const sameDept = [...existing, ...extras];
+    for (let i = 0; i < CAP - 1; i += 1) {
+      const res = await makeRequest('/api/awards', 'POST', { employeeId: sameDept[i]._id, month, year }, adminToken);
+      check(`Winner #${i + 2} in the same department allowed`, res.status === 201, JSON.stringify(res.data));
+    }
+    const overCap = await makeRequest('/api/awards', 'POST', { employeeId: sameDept[CAP - 1]._id, month, year }, adminToken);
+    check(`Winner #${CAP + 1} in the same department refused`, overCap.status === 400, JSON.stringify(overCap.data));
 
     const listed = await makeRequest('/api/awards', 'GET', null, elenaToken);
     const alexAward = listed.data.awards.find((a) => a.employee._id === alex._id.toString());
@@ -221,6 +237,53 @@ async function runEmployeeOfMonthTest() {
     check(
       'Admin can remove an uploaded signature',
       cleared.status === 200 && afterClear.data.slots.find((s) => s.key === 'sajal-jain')?.source !== 'uploaded'
+    );
+
+    // --- Award photo ---
+    const sendPhoto = async (method, path, buffer, token, fields = {}) => {
+      const form = new FormData();
+      Object.entries(fields).forEach(([k, v]) => form.append(k, String(v)));
+      if (buffer) form.append('photo', new Blob([buffer], { type: 'image/png' }), 'photo.png');
+      const res = await realFetch(`http://localhost:${process.env.PORT}${path}`, {
+        method,
+        headers: { Authorization: `Bearer ${token}` },
+        body: form,
+      });
+      return { status: res.status, data: await res.json() };
+    };
+    const fetchPublic = (url) => realFetch(`http://localhost:${process.env.PORT}${url}`);
+
+    const photoUp = await sendPhoto('PUT', `/api/awards/${awardId}/photo`, png, adminToken);
+    check('Admin adds a photo to an award', photoUp.status === 200 && photoUp.data.award?.photo, JSON.stringify(photoUp.data));
+    const photoUrl = photoUp.data.award?.photo;
+    check('Photo is viewable on the dashboard', photoUrl && (await fetchPublic(photoUrl)).status === 200);
+    const fakePhoto = await sendPhoto('PUT', `/api/awards/${awardId}/photo`, Buffer.from('not an image at all'), adminToken);
+    check('A renamed non-image photo is rejected', fakePhoto.status === 400);
+    const empPhoto = await sendPhoto('PUT', `/api/awards/${awardId}/photo`, png, alexToken);
+    check('Employees cannot add award photos', empPhoto.status === 403);
+    const listedWithPhoto = await makeRequest('/api/awards', 'GET', null, elenaToken);
+    check(
+      'Everyone sees the award photo',
+      listedWithPhoto.data.awards.find((a) => a._id === awardId)?.photo === photoUrl
+    );
+    const photoGone = await makeRequest(`/api/awards/${awardId}/photo`, 'DELETE', null, adminToken);
+    check(
+      'Admin can remove the photo',
+      photoGone.status === 200 && !photoGone.data.award.photo && (await fetchPublic(photoUrl)).status === 404
+    );
+
+    // A photo can also be attached when naming the winner.
+    const prevMonth = month === 1 ? 12 : month - 1;
+    const prevYear = month === 1 ? year - 1 : year;
+    const withPhoto = await sendPhoto('POST', '/api/awards', png, adminToken, {
+      employeeId: elena._id, month: prevMonth, year: prevYear, citation: 'Great work',
+    });
+    check('Winner can be named with a photo', withPhoto.status === 201 && withPhoto.data.award?.photo, JSON.stringify(withPhoto.data));
+    const createdPhotoUrl = withPhoto.data.award?.photo;
+    const removedWithPhoto = await makeRequest(`/api/awards/${withPhoto.data.award?._id}`, 'DELETE', null, adminToken);
+    check(
+      "Removing an award deletes its photo",
+      removedWithPhoto.status === 200 && createdPhotoUrl && (await fetchPublic(createdPhotoUrl)).status === 404
     );
 
     const removed = await makeRequest(`/api/awards/${awardId}`, 'DELETE', null, adminToken);

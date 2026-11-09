@@ -4,7 +4,7 @@ const mongoose = require('mongoose');
  * An Employee of the Month award.
  *
  * Awarded per department: each department usually gets one winner a month,
- * occasionally two (the cap lives in the award controller). The department is
+ * sometimes up to four (the cap lives in the award controller). The department is
  * snapshotted at award time so a later transfer doesn't move old awards.
  */
 const awardSchema = new mongoose.Schema(
@@ -34,6 +34,16 @@ const awardSchema = new mongoose.Schema(
       type: String,
       default: '',
       trim: true,
+    },
+    // Optional photo for the award (e.g. receiving it), shown on the dashboard.
+    // photo is the public URL; photoFile is the stored name, for deletion.
+    photo: {
+      type: String,
+      default: '',
+    },
+    photoFile: {
+      type: String,
+      default: '',
     },
     awardedBy: {
       type: mongoose.Schema.Types.ObjectId,

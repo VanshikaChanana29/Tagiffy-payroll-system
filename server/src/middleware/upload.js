@@ -219,6 +219,29 @@ const uploadExpenseDocs = (req, res, next) => {
   });
 };
 
+// --- Employee of the Month photos -------------------------------------------
+
+const AWARD_PHOTOS_FOLDER = 'award-photos';
+
+// Optional on create, required on the dedicated photo route (checked there).
+const uploadAwardPhoto = (req, res, next) => {
+  avatarUpload.single('photo')(req, res, (err) => {
+    if (err) {
+      const message =
+        err.code === 'LIMIT_FILE_SIZE'
+          ? `Image is too large. Maximum allowed size is ${MAX_AVATAR_BYTES / (1024 * 1024)} MB.`
+          : err.message || 'Photo upload failed';
+      return res.status(400).json({ success: false, message });
+    }
+    if (req.file) {
+      const ext = ALLOWED_IMAGE_TYPES[req.file.mimetype] || '.jpg';
+      // Served without auth (like avatars), so the name must not be guessable.
+      req.file.filename = `award-${uniqueSuffix(1e12)}${ext}`;
+    }
+    next();
+  });
+};
+
 // --- Certificate signatures / company stamp ---------------------------------
 
 const CERTIFICATES_FOLDER = 'certificates';
@@ -254,6 +277,8 @@ const uploadCertificateImage = (req, res, next) => {
 };
 
 module.exports = {
+  uploadAwardPhoto,
+  AWARD_PHOTOS_FOLDER,
   uploadCertificateImage,
   CERTIFICATES_FOLDER,
   uploadExpenseDocs,

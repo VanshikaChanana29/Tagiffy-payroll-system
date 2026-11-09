@@ -10,8 +10,26 @@ const MONTHS = [
 export const fetchAwards = (month, year) =>
   api.get('/awards', { params: month && year ? { month, year } : {} });
 
-export const createAward = ({ employeeId, month, year, citation }) =>
-  api.post('/awards', { employeeId, month, year, citation });
+/** Sent as multipart so an optional photo can ride along. */
+export const createAward = ({ employeeId, month, year, citation, photo }) => {
+  const form = new FormData();
+  form.append('employeeId', employeeId);
+  form.append('month', month);
+  form.append('year', year);
+  form.append('citation', citation || '');
+  if (photo) form.append('photo', photo);
+  return api.post('/awards', form, { headers: { 'Content-Type': 'multipart/form-data' } });
+};
+
+export const uploadAwardPhoto = (awardId, file) => {
+  const form = new FormData();
+  form.append('photo', file);
+  return api.put(`/awards/${awardId}/photo`, form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+};
+
+export const deleteAwardPhoto = (awardId) => api.delete(`/awards/${awardId}/photo`);
 
 export const resendCertificate = (awardId) => api.post(`/awards/${awardId}/send-certificate`);
 

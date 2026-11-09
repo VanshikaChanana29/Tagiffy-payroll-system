@@ -41,6 +41,19 @@ app.get('/api/files/avatars/:name', async (req, res) => {
   }
 });
 
+// Employee of the Month photos: public for the same reason as avatars, with
+// equally unguessable filenames.
+const { AWARD_PHOTOS_FOLDER } = require('./middleware/upload');
+app.get('/api/files/award-photos/:name', async (req, res) => {
+  try {
+    const sent = await sendStoredFile(res, AWARD_PHOTOS_FOLDER, req.params.name, { cacheSeconds: 86400 });
+    if (!sent) res.status(404).end();
+  } catch (err) {
+    console.error(`Award photo fetch failed: ${err.message}`);
+    if (!res.headersSent) res.status(500).end();
+  }
+});
+
 // Serve the built React client (client/dist) once it exists, so the API and
 // the frontend can run as a single process/port in production instead of a
 // separate Vite dev server. Build it first with `npm --prefix client run build`.

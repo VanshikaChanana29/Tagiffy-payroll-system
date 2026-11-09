@@ -100,12 +100,20 @@ const EmployeeOfMonthCard = () => {
           return (
             <div
               key={award._id}
-              className={`p-4 rounded-xl border flex gap-3 ${
+              className={`rounded-xl border overflow-hidden ${
                 isMe
                   ? 'bg-amber-50 dark:bg-amber-500/10 border-amber-400/60'
                   : 'bg-slate-50 dark:bg-slate-950/70 border-slate-200 dark:border-slate-800'
               }`}
             >
+              {award.photo && (
+                <img
+                  src={award.photo}
+                  alt={`${emp.name}, Employee of the Month`}
+                  className="w-full h-40 object-cover"
+                />
+              )}
+              <div className="p-4 flex gap-3">
               <img
                 src={emp.avatar || buildInitialsAvatar(emp.name)}
                 alt=""
@@ -136,6 +144,7 @@ const EmployeeOfMonthCard = () => {
                     </button>
                   </div>
                 )}
+              </div>
               </div>
             </div>
           );

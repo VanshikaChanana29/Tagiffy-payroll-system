@@ -12,9 +12,14 @@ const {
   uploadCertificateImage,
   deleteCertificateImage,
   previewCertificate,
+  uploadAwardPhoto,
+  deleteAwardPhoto,
 } = require('../controllers/awardController');
 const { protect, authorize } = require('../middleware/auth');
-const { uploadCertificateImage: receiveImage } = require('../middleware/upload');
+const {
+  uploadCertificateImage: receiveImage,
+  uploadAwardPhoto: receivePhoto,
+} = require('../middleware/upload');
 
 router.use(protect);
 
@@ -29,11 +34,14 @@ router.get('/certificate-preview', authorize('admin'), previewCertificate);
 // Everyone sees the winners; only HR names them.
 router.route('/')
   .get(getAwards)
-  .post(authorize('admin'), createAward);
+  .post(authorize('admin'), receivePhoto, createAward);
 
 router.get('/mine', getMyAwards);
 router.get('/:id/certificate', downloadCertificate);
 router.post('/:id/send-certificate', authorize('admin'), resendCertificate);
 router.delete('/:id', authorize('admin'), deleteAward);
+router.route('/:id/photo')
+  .put(authorize('admin'), receivePhoto, uploadAwardPhoto)
+  .delete(authorize('admin'), deleteAwardPhoto);
 
 module.exports = router;

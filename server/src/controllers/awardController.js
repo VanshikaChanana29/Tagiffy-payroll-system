@@ -7,7 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const { sendEmail } = require('../utils/emailService');
 const { saveFile, deleteFile, sendStoredFile } = require('../utils/fileStorage');
-const { CERTIFICATES_FOLDER, isRealImage } = require('../middleware/upload');
+const { CERTIFICATES_FOLDER, AWARD_PHOTOS_FOLDER, isRealImage } = require('../middleware/upload');
 const {
   streamCertificatePdf,
   certificatePdfBuffer,
@@ -18,8 +18,10 @@ const {
   MONTHS,
 } = require('../utils/certificatePdf');
 
-// Usually one winner per department a month; sometimes two.
-const MAX_WINNERS_PER_DEPARTMENT = 2;
+// Usually one winner per department a month; sometimes up to four.
+const MAX_WINNERS_PER_DEPARTMENT = 4;
+
+const awardPhotoUrl = (filename) => `/api/files/award-photos/${filename}`;
 
 const EMPLOYEE_FIELDS = 'name employeeId email department designation avatar';
 
@@ -173,14 +175,32 @@ const createAward = async (req, res) => {
       });
     }
 
-    const award = await Award.create({
-      employee: employee._id,
-      department: employee.department,
-      month,
-      year,
-      citation: String(citation).trim(),
-      awardedBy: req.user._id,
-    });
+    // Optional photo sent along with the form.
+    let photoFile = '';
+    if (req.file) {
+      if (!isRealImage(req.file.buffer)) {
+        return res.status(400).json({ success: false, message: 'Please choose a JPG, PNG, or WEBP image.' });
+      }
+      await saveFile(AWARD_PHOTOS_FOLDER, req.file.filename, req.file.buffer, req.file.mimetype);
+      photoFile = req.file.filename;
+    }
+
+    let award;
+    try {
+      award = await Award.create({
+        employee: employee._id,
+        department: employee.department,
+        month,
+        year,
+        citation: String(citation).trim(),
+        photo: photoFile ? awardPhotoUrl(photoFile) : '',
+        photoFile,
+        awardedBy: req.user._id,
+      });
+    } catch (createErr) {
+      if (photoFile) await deleteFile(AWARD_PHOTOS_FOLDER, photoFile);
+      throw createErr;
+    }
     await award.populate('employee', EMPLOYEE_FIELDS);
 
     const emailed = await emailCertificate(award);
@@ -268,6 +288,7 @@ const deleteAward = async (req, res) => {
     }
 
     await award.deleteOne();
+    if (award.photoFile) await deleteFile(AWARD_PHOTOS_FOLDER, award.photoFile);
 
     res.status(200).json({
       success: true,
@@ -280,6 +301,55 @@ const deleteAward = async (req, res) => {
       message: 'Failed to remove the award',
       error: error.message,
     });
+  }
+};
+
+// @desc    Add / replace the award photo
+// @route   PUT /api/awards/:id/photo
+// @access  Private (Admin only)
+const uploadAwardPhoto = async (req, res) => {
+  try {
+    if (!req.file || !isRealImage(req.file.buffer)) {
+      return res.status(400).json({ success: false, message: 'Please choose a JPG, PNG, or WEBP image.' });
+    }
+    const award = await Award.findById(req.params.id);
+    if (!award) {
+      return res.status(404).json({ success: false, message: 'Award not found' });
+    }
+
+    await saveFile(AWARD_PHOTOS_FOLDER, req.file.filename, req.file.buffer, req.file.mimetype);
+    const previous = award.photoFile;
+    award.photoFile = req.file.filename;
+    award.photo = awardPhotoUrl(req.file.filename);
+    await award.save();
+    if (previous) await deleteFile(AWARD_PHOTOS_FOLDER, previous);
+
+    res.status(200).json({ success: true, message: 'Photo saved.', award });
+  } catch (error) {
+    console.error('Upload Award Photo Error:', error);
+    res.status(500).json({ success: false, message: 'Failed to save the photo', error: error.message });
+  }
+};
+
+// @desc    Remove the award photo
+// @route   DELETE /api/awards/:id/photo
+// @access  Private (Admin only)
+const deleteAwardPhoto = async (req, res) => {
+  try {
+    const award = await Award.findById(req.params.id);
+    if (!award) {
+      return res.status(404).json({ success: false, message: 'Award not found' });
+    }
+    const previous = award.photoFile;
+    award.photo = '';
+    award.photoFile = '';
+    await award.save();
+    if (previous) await deleteFile(AWARD_PHOTOS_FOLDER, previous);
+
+    res.status(200).json({ success: true, message: 'Photo removed.', award });
+  } catch (error) {
+    console.error('Delete Award Photo Error:', error);
+    res.status(500).json({ success: false, message: 'Failed to remove the photo', error: error.message });
   }
 };
 
@@ -477,4 +547,6 @@ module.exports = {
   resendCertificate,
   deleteAward,
   downloadCertificate,
+  uploadAwardPhoto,
+  deleteAwardPhoto,
 };
