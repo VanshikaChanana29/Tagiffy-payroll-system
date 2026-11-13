@@ -107,7 +107,7 @@ const EmployeeOfMonthCard = () => {
               }`}
             >
               {award.photo && (
-                <div className="relative w-full aspect-[4/5] overflow-hidden bg-slate-900">
+                <div className="relative w-full h-52 sm:h-56 overflow-hidden bg-slate-900">
                   {/* Blurred copy fills the frame so the full photo can sit on top uncropped. */}
                   <img
                     src={award.photo}
@@ -125,6 +125,11 @@ const EmployeeOfMonthCard = () => {
               <div className="p-4 flex gap-3">
               <img
                 src={emp.avatar || buildInitialsAvatar(emp.name)}
+                onError={(e) => {
+                  // A dead avatar URL would show a broken-image icon; use initials instead.
+                  const fallback = buildInitialsAvatar(emp.name);
+                  if (e.currentTarget.src !== fallback) e.currentTarget.src = fallback;
+                }}
                 alt=""
                 className="w-12 h-12 rounded-xl object-cover shrink-0 border border-slate-200 dark:border-slate-700"
               />
