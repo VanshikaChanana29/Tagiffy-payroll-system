@@ -516,7 +516,7 @@ const getMyMonthlyView = async (req, res) => {
     const [records, settings, employee] = await Promise.all([
       Attendance.find({ userId, date: { $regex: `^${monthPrefix}` } }),
       OrgSettings.getSettings(),
-      User.findById(userId).select('joiningDate name department weeklyOffDays customShift attendanceExempt'),
+      User.findById(userId).select('joiningDate name department officeLocationId weeklyOffDays customShift attendanceExempt'),
     ]);
     const weeklyOffDays = employee?.weeklyOffDays;
 
@@ -528,7 +528,8 @@ const getMyMonthlyView = async (req, res) => {
     const holidayMap = await getHolidayMap(
       format(monthStart, 'yyyy-MM-dd'),
       format(monthEnd, 'yyyy-MM-dd'),
-      employee?.department
+      employee?.department,
+      employee?.officeLocationId
     );
 
     const recordMap = {};
@@ -666,7 +667,7 @@ const getMyWeeklyView = async (req, res) => {
     const [records, settings, employee] = await Promise.all([
       Attendance.find({ userId, date: { $in: dateStrings } }),
       OrgSettings.getSettings(),
-      User.findById(userId).select('joiningDate department weeklyOffDays attendanceExempt'),
+      User.findById(userId).select('joiningDate department officeLocationId weeklyOffDays attendanceExempt'),
     ]);
     const weeklyOffDays = employee?.weeklyOffDays;
 
@@ -678,7 +679,8 @@ const getMyWeeklyView = async (req, res) => {
     const holidayMap = await getHolidayMap(
       dateStrings[0],
       dateStrings[dateStrings.length - 1],
-      employee?.department
+      employee?.department,
+      employee?.officeLocationId
     );
 
     const recordMap = {};
@@ -807,11 +809,17 @@ const getAllAttendance = async (req, res) => {
 
     const leaveByUser = new Map(leaves.map((l) => [l.userId.toString(), l.leaveType]));
 
-    // Holidays can be department-specific, so build one map per department.
-    const departments = [...new Set(employees.map((e) => e.department || ''))];
-    const holidayByDept = new Map(
+    // Holidays can be scoped by department and by branch, so look one up per
+    // distinct (department, branch) pair in the roll call.
+    const holidayScopeKey = (emp) =>
+      `${emp.department || ''}|${emp.officeLocationId ? emp.officeLocationId.toString() : ''}`;
+    const scopes = new Map(employees.map((e) => [holidayScopeKey(e), e]));
+    const holidayByScope = new Map(
       await Promise.all(
-        departments.map(async (d) => [d, (await getHolidayMap(dateStr, dateStr, d || null))[dateStr]])
+        [...scopes].map(async ([key, e]) => [
+          key,
+          (await getHolidayMap(dateStr, dateStr, e.department || null, e.officeLocationId || null))[dateStr],
+        ])
       )
     );
 
@@ -836,7 +844,7 @@ const getAllAttendance = async (req, res) => {
       // Not yet an employee on this date: leave them out of the roll call.
       if (emp.joiningDate && format(new Date(emp.joiningDate), 'yyyy-MM-dd') > dateStr) return;
 
-      const holidayName = holidayByDept.get(emp.department || '') || null;
+      const holidayName = holidayByScope.get(holidayScopeKey(emp)) || null;
       let rowStatus;
       if (leaveType) rowStatus = 'Leave';
       else if (holidayName) rowStatus = 'Holiday';

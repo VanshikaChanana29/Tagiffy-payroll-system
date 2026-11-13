@@ -37,6 +37,14 @@ const holidaySchema = new mongoose.Schema(
       type: [String],
       default: [],
     },
+    // Branches (OrgSettings.officeLocations[]._id, as strings, matching
+    // User.officeLocationId) this holiday applies to. Empty means every branch.
+    // Combined with `departments`: an employee gets the holiday only when both
+    // their department and their branch are covered.
+    officeLocationIds: {
+      type: [String],
+      default: [],
+    },
   },
   { timestamps: true }
 );

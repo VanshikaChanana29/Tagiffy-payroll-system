@@ -2,6 +2,10 @@ const Holiday = require('../models/Holiday');
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
+// Normalises a scope list from the request body (departments or branch ids).
+const cleanList = (list) =>
+  Array.isArray(list) ? [...new Set(list.map((v) => String(v).trim()).filter(Boolean))] : [];
+
 // @desc    List holidays, optionally for one year
 // @route   GET /api/holidays?year=2026
 // @access  Private (everyone — employees need to see the calendar)
@@ -42,7 +46,7 @@ const getHolidays = async (req, res) => {
 // @access  Private (Admin only)
 const createHoliday = async (req, res) => {
   try {
-    const { name, date, type = 'Public', description = '', departments } = req.body;
+    const { name, date, type = 'Public', description = '', departments, officeLocationIds } = req.body;
 
     if (!name || !name.trim() || !date) {
       return res.status(400).json({
@@ -71,9 +75,8 @@ const createHoliday = async (req, res) => {
       date,
       type,
       description: description.trim(),
-      departments: Array.isArray(departments)
-        ? departments.map((d) => String(d).trim()).filter(Boolean)
-        : [],
+      departments: cleanList(departments),
+      officeLocationIds: cleanList(officeLocationIds),
     });
 
     res.status(201).json({
@@ -96,7 +99,7 @@ const createHoliday = async (req, res) => {
 // @access  Private (Admin only)
 const updateHoliday = async (req, res) => {
   try {
-    const { name, date, type, description, departments } = req.body;
+    const { name, date, type, description, departments, officeLocationIds } = req.body;
 
     const holiday = await Holiday.findById(req.params.id);
     if (!holiday) {
@@ -123,11 +126,8 @@ const updateHoliday = async (req, res) => {
     if (name !== undefined && name.trim()) holiday.name = name.trim();
     if (type !== undefined) holiday.type = type;
     if (description !== undefined) holiday.description = description.trim();
-    if (departments !== undefined) {
-      holiday.departments = Array.isArray(departments)
-        ? departments.map((d) => String(d).trim()).filter(Boolean)
-        : [];
-    }
+    if (departments !== undefined) holiday.departments = cleanList(departments);
+    if (officeLocationIds !== undefined) holiday.officeLocationIds = cleanList(officeLocationIds);
 
     await holiday.save();
 
@@ -177,22 +177,29 @@ const deleteHoliday = async (req, res) => {
  * Shared by attendance, leave and payroll so all three agree on what is a
  * working day.
  *
- * A holiday with an empty `departments` list is organisation-wide. One scoped
- * to specific departments only applies when `department` matches one of them —
- * so pass the employee's department for every per-employee calculation.
+ * A holiday is scoped on two independent axes, each empty meaning "all":
+ *   - `departments`       — matched against the employee's department
+ *   - `officeLocationIds` — matched against the employee's branch
+ * It applies to an employee only when both axes cover them. So pass the
+ * employee's department AND officeLocationId for every per-employee
+ * calculation; an employee with no branch assigned only gets holidays that
+ * are not branch-scoped.
  */
-const getHolidayMap = async (fromDateStr, toDateStr, department = null) => {
+const getHolidayMap = async (fromDateStr, toDateStr, department = null, officeLocationId = null) => {
   const holidays = await Holiday.find({
     date: { $gte: fromDateStr, $lte: toDateStr },
     // Restricted holidays are optional, so they do not close the office.
     type: { $ne: 'Restricted' },
   });
 
+  const branch = officeLocationId ? String(officeLocationId) : null;
   const map = {};
   holidays.forEach((h) => {
-    const appliesToAll = !h.departments || h.departments.length === 0;
-    const appliesToThisDept = department && h.departments.includes(department);
-    if (appliesToAll || appliesToThisDept) {
+    const depts = h.departments || [];
+    const branches = h.officeLocationIds || [];
+    const deptOk = depts.length === 0 || (department && depts.includes(department));
+    const branchOk = branches.length === 0 || (branch && branches.includes(branch));
+    if (deptOk && branchOk) {
       map[h.date] = h.name;
     }
   });

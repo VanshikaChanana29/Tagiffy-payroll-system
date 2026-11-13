@@ -66,7 +66,7 @@ const applyLeave = async (req, res) => {
     // Leave is charged in working days: a Friday-to-Monday request costs two
     // days, not four, and never eats a weekend out of someone's balance.
     const settings = await OrgSettings.getSettings();
-    const holidayMap = await getHolidayMap(startDate, endDate, req.user.department);
+    const holidayMap = await getHolidayMap(startDate, endDate, req.user.department, req.user.officeLocationId);
     const { workingDays: daysCount, calendarDays } = countWorkingDays(
       startDate,
       endDate,

@@ -144,7 +144,8 @@ const buildPayslipForEmployee = async (employee, month, year, settings) => {
   const holidayMap = await getHolidayMap(
     format(monthStart, 'yyyy-MM-dd'),
     format(monthEnd, 'yyyy-MM-dd'),
-    employee.department
+    employee.department,
+    employee.officeLocationId
   );
 
   const days = eachDayOfInterval({ start: monthStart, end: monthEnd });

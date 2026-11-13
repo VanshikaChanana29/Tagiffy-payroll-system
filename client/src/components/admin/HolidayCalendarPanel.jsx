@@ -2,8 +2,39 @@ import React, { useState, useEffect } from 'react';
 import { CalendarHeart, Plus, Trash2, Pencil, X } from 'lucide-react';
 import api from '../../api/client';
 import { useToast } from '../../context/ToastContext';
+import useOfficeLocations from '../../hooks/useOfficeLocations';
 
 const TYPES = ['Public', 'Restricted', 'Company'];
+
+const EMPTY_FORM = { name: '', date: '', type: 'Public', description: '', departments: [], officeLocationIds: [] };
+
+const chipClass = (selected) =>
+  `px-2.5 py-1 rounded-lg text-[10px] font-bold border ${
+    selected
+      ? 'bg-brand-600 text-white border-brand-600'
+      : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+  }`;
+
+/** "All …" chip plus one toggle chip per option; an empty selection means all. */
+const ScopePicker = ({ allLabel, options, selected, onChange }) => (
+  <div className="flex flex-wrap gap-1.5 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
+    <button type="button" onClick={() => onChange([])} className={chipClass(selected.length === 0)}>
+      {allLabel}
+    </button>
+    {options.map((o) => (
+      <button
+        key={o.value}
+        type="button"
+        onClick={() =>
+          onChange(selected.includes(o.value) ? selected.filter((v) => v !== o.value) : [...selected, o.value])
+        }
+        className={chipClass(selected.includes(o.value))}
+      >
+        {o.label}
+      </button>
+    ))}
+  </div>
+);
 
 const typeStyle = (type) => {
   if (type === 'Restricted') {
@@ -26,11 +57,13 @@ const HolidayCalendarPanel = () => {
   const toast = useToast();
   const [holidays, setHolidays] = useState([]);
   const [departments, setDepartments] = useState([]);
+  const officeLocations = useOfficeLocations();
+  const branchName = (id) => officeLocations.find((o) => o._id === id)?.name || 'Removed branch';
   const [loading, setLoading] = useState(true);
   const [year, setYear] = useState(new Date().getFullYear());
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({ name: '', date: '', type: 'Public', description: '', departments: [] });
+  const [form, setForm] = useState(EMPTY_FORM);
 
   const fetchHolidays = async () => {
     try {
@@ -64,7 +97,7 @@ const HolidayCalendarPanel = () => {
 
   const openAdd = () => {
     setEditing(null);
-    setForm({ name: '', date: '', type: 'Public', description: '', departments: [] });
+    setForm(EMPTY_FORM);
     setShowModal(true);
   };
 
@@ -76,17 +109,9 @@ const HolidayCalendarPanel = () => {
       type: holiday.type,
       description: holiday.description || '',
       departments: holiday.departments || [],
+      officeLocationIds: holiday.officeLocationIds || [],
     });
     setShowModal(true);
-  };
-
-  const toggleDepartment = (name) => {
-    setForm((prev) => ({
-      ...prev,
-      departments: prev.departments.includes(name)
-        ? prev.departments.filter((d) => d !== name)
-        : [...prev.departments, name],
-    }));
   };
 
   const handleSubmit = async (e) => {
@@ -210,6 +235,10 @@ const HolidayCalendarPanel = () => {
                   {h.departments && h.departments.length > 0
                     ? h.departments.join(', ')
                     : 'All Departments'}
+                  {' · '}
+                  {h.officeLocationIds && h.officeLocationIds.length > 0
+                    ? h.officeLocationIds.map(branchName).join(', ')
+                    : 'All Branches'}
                 </div>
                 {h.description && (
                   <div className="text-[10px] text-slate-400 mt-0.5 truncate">{h.description}</div>
@@ -298,38 +327,32 @@ const HolidayCalendarPanel = () => {
               </p>
 
               <div>
-                <label className={label}>Applies to</label>
-                <div className="flex flex-wrap gap-1.5 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
-                  <button
-                    type="button"
-                    onClick={() => setForm({ ...form, departments: [] })}
-                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border ${
-                      form.departments.length === 0
-                        ? 'bg-brand-600 text-white border-brand-600'
-                        : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
-                    }`}
-                  >
-                    All Departments
-                  </button>
-                  {departments.map((d) => (
-                    <button
-                      key={d._id}
-                      type="button"
-                      onClick={() => toggleDepartment(d.name)}
-                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border ${
-                        form.departments.includes(d.name)
-                          ? 'bg-brand-600 text-white border-brand-600'
-                          : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
-                      }`}
-                    >
-                      {d.name}
-                    </button>
-                  ))}
-                </div>
-                <p className="text-[10px] text-slate-400 mt-1.5">
-                  Leave on "All Departments", or pick one or more to scope this holiday to just those teams.
-                </p>
+                <label className={label}>Departments</label>
+                <ScopePicker
+                  allLabel="All Departments"
+                  options={departments.map((d) => ({ value: d.name, label: d.name }))}
+                  selected={form.departments}
+                  onChange={(v) => setForm({ ...form, departments: v })}
+                />
               </div>
+
+              {officeLocations.length > 0 && (
+                <div>
+                  <label className={label}>Branches</label>
+                  <ScopePicker
+                    allLabel="All Branches"
+                    options={officeLocations.map((o) => ({ value: o._id, label: o.name }))}
+                    selected={form.officeLocationIds}
+                    onChange={(v) => setForm({ ...form, officeLocationIds: v })}
+                  />
+                </div>
+              )}
+
+              <p className="text-[10px] text-slate-400 -mt-2">
+                Leave both on "All" for an organisation-wide holiday. Picking departments and/or
+                branches limits it to employees who match both, e.g. only the Panipat branch.
+                Employees with no branch assigned only get holidays set to "All Branches".
+              </p>
 
               <div>
                 <label className={label}>Description</label>
