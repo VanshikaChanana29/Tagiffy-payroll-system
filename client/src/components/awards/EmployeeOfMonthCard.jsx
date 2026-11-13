@@ -107,11 +107,20 @@ const EmployeeOfMonthCard = () => {
               }`}
             >
               {award.photo && (
-                <img
-                  src={award.photo}
-                  alt={`${emp.name}, Employee of the Month`}
-                  className="w-full h-40 object-cover"
-                />
+                <div className="relative w-full aspect-[4/5] overflow-hidden bg-slate-900">
+                  {/* Blurred copy fills the frame so the full photo can sit on top uncropped. */}
+                  <img
+                    src={award.photo}
+                    alt=""
+                    aria-hidden="true"
+                    className="absolute inset-0 w-full h-full object-cover scale-110 blur-xl opacity-60"
+                  />
+                  <img
+                    src={award.photo}
+                    alt={`${emp.name}, Employee of the Month`}
+                    className="relative w-full h-full object-contain"
+                  />
+                </div>
               )}
               <div className="p-4 flex gap-3">
               <img
