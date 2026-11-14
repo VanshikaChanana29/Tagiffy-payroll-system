@@ -83,6 +83,8 @@ app.use('/api/holidays', require('./routes/holidayRoutes'));
 app.use('/api/notifications', require('./routes/notificationRoutes'));
 app.use('/api/reimbursements', require('./routes/reimbursementRoutes'));
 app.use('/api/awards', require('./routes/awardRoutes'));
+app.use('/api/exits', require('./routes/exitRoutes'));
+app.use('/api/resignations', require('./routes/resignationRoutes'));
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -125,6 +127,8 @@ app.use((err, req, res, next) => {
 // requests it cannot serve.
 if (process.env.NODE_ENV !== 'test') {
   connectDB().then(() => {
+    // Deactivates people once their last working day has passed.
+    require('./utils/exitScheduler').startExitScheduler();
     app.listen(PORT, () => {
       console.log(`🚀 Dayflow HRMS Server listening on http://localhost:${PORT}`);
       console.log(`📡 Health check available at http://localhost:${PORT}/api/health`);

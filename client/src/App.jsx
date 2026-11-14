@@ -19,12 +19,15 @@ import PayrollManagementPage from './pages/admin/PayrollManagementPage';
 import EmployeeContextView from './pages/admin/EmployeeContextView';
 import OrgSettingsPage from './pages/admin/OrgSettingsPage';
 import EmployeeOfMonthPage from './pages/admin/EmployeeOfMonthPage';
+import ExitRegisterPage from './pages/admin/ExitRegisterPage';
 import EmployeeDashboard from './pages/employee/EmployeeDashboard';
 import TeamDirectoryPage from './pages/manager/TeamDirectoryPage';
+import TeamResignationsPage from './pages/manager/TeamResignationsPage';
 import MyAttendancePage from './pages/employee/MyAttendancePage';
 import MyLeavesPage from './pages/employee/MyLeavesPage';
 import MyReimbursementsPage from './pages/employee/MyReimbursementsPage';
 import MySalaryPage from './pages/employee/MySalaryPage';
+import MyResignationPage from './pages/employee/MyResignationPage';
 
 // Root redirect handler based on authentication status & role
 const RootRedirect = () => {
@@ -72,6 +75,7 @@ function App() {
                     <Route path="/admin/payroll" element={<PayrollManagementPage />} />
                     <Route path="/admin/expenses" element={<MiscExpensesPage />} />
                     <Route path="/admin/awards" element={<EmployeeOfMonthPage />} />
+                    <Route path="/admin/exits" element={<ExitRegisterPage />} />
                     <Route path="/admin/org-settings" element={<OrgSettingsPage />} />
                     <Route path="/admin/profile" element={<ProfilePage />} />
                     <Route path="/admin/employee-view" element={<EmployeeContextView />} />
@@ -86,6 +90,7 @@ function App() {
                     <Route path="/team/attendance" element={<AllAttendancePage />} />
                     <Route path="/team/leaves" element={<LeaveApprovalPage />} />
                     <Route path="/team/reimbursements" element={<ReimbursementApprovalPage />} />
+                    <Route path="/team/resignations" element={<TeamResignationsPage />} />
                   </Route>
                 </Route>
 
@@ -97,6 +102,7 @@ function App() {
                     <Route path="/employee/leaves" element={<MyLeavesPage />} />
                     <Route path="/employee/reimbursements" element={<MyReimbursementsPage />} />
                     <Route path="/employee/salary" element={<MySalaryPage />} />
+                    <Route path="/employee/resignation" element={<MyResignationPage />} />
                     <Route path="/employee/profile" element={<ProfilePage />} />
                   </Route>
                 </Route>

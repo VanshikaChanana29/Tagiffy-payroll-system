@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bell, CheckCheck, CalendarClock, MapPinOff, FileText, Wallet, ClipboardCheck, Clock, Home, Landmark, Receipt, KeyRound, ChevronRight, Trophy } from 'lucide-react';
+import { Bell, CheckCheck, CalendarClock, MapPinOff, FileText, Wallet, ClipboardCheck, Clock, Home, Landmark, Receipt, KeyRound, ChevronRight, Trophy, UserMinus } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { useNotifications } from '../../context/NotificationContext';
 import { useAuth } from '../../context/AuthContext';
@@ -34,6 +34,10 @@ const ICONS_BY_TYPE = {
   password_reset_by_hr: KeyRound,
   award_received: Trophy,
   award_announced: Trophy,
+  resignation_submitted: UserMinus,
+  resignation_withdrawn: UserMinus,
+  resignation_accepted: UserMinus,
+  resignation_rejected: UserMinus,
 };
 
 // Which area a notification is about, from its type prefix.
@@ -45,6 +49,7 @@ const areaOf = (type = '') => {
   if (type.startsWith('reimbursement_')) return 'reimbursements';
   if (type.startsWith('payslip_')) return 'payroll';
   if (type.startsWith('award_')) return 'awards';
+  if (type.startsWith('resignation_')) return 'resignations';
   return null;
 };
 
@@ -54,6 +59,7 @@ const OWN_PAGES = {
   attendance: '/employee/attendance',
   reimbursements: '/employee/reimbursements',
   payroll: '/employee/salary',
+  resignations: '/employee/resignation',
 };
 
 // A manager's team screens; anything else opens their team list.
@@ -61,6 +67,7 @@ const TEAM_PAGES = {
   leaves: '/team/leaves',
   attendance: '/team/attendance',
   reimbursements: '/team/reimbursements',
+  resignations: '/team/resignations',
 };
 
 const NotificationBell = () => {
@@ -85,6 +92,7 @@ const NotificationBell = () => {
 
     if (aboutSomeoneElse && isAdmin) {
       if (area === 'reimbursements') return { path: '/admin/reimbursements' };
+      if (area === 'resignations') return { path: '/admin/exits' };
       return { path: '/admin/employee-view', subject, tab: area || 'dashboard' };
     }
     if (aboutSomeoneElse && user?.role === 'manager') {
