@@ -27,6 +27,11 @@ const NOTIFICATION_TYPES = [
   'password_reset_by_hr',
   'award_received',
   'award_announced',
+  'resignation_submitted',
+  'resignation_withdrawn',
+  'resignation_accepted',
+  'resignation_rejected',
+  'resignation_relieved_early',
 ];
 
 const notificationSchema = new mongoose.Schema(

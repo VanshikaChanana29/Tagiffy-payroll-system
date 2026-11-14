@@ -35,6 +35,8 @@ import Pagination, { usePagination } from '../../components/common/Pagination';
 import FilterBar from '../../components/common/FilterBar';
 import { useAuth } from '../../context/AuthContext';
 import useOfficeLocations from '../../hooks/useOfficeLocations';
+import RecordExitModal from '../../components/admin/RecordExitModal';
+import { fetchExits } from '../../api/exits';
 
 // Sortable table columns -> the value each one sorts by.
 const SORT_FIELDS = {
@@ -80,6 +82,10 @@ const EmployeeDirectoryPage = () => {
 
   // Password reset, for an employee who forgot theirs
   const [resetTarget, setResetTarget] = useState(null);
+
+  // Exits: who is serving notice (employee id → exit), and whose exit HR is recording.
+  const [pendingExits, setPendingExits] = useState({});
+  const [exitTarget, setExitTarget] = useState(null);
   const [resetForm, setResetForm] = useState({ newPassword: '', confirmPassword: '' });
   const [showResetPassword, setShowResetPassword] = useState(false);
   const [resetLoading, setResetLoading] = useState(false);
@@ -123,10 +129,18 @@ const EmployeeDirectoryPage = () => {
       if (selectedOffice !== 'All') params.officeLocation = selectedOffice;
       if (selectedRole !== 'All') params.role = selectedRole;
 
-      const res = await api.get('/users', { params });
+      const [res, exitRes] = await Promise.all([
+        api.get('/users', { params }),
+        fetchExits({ status: 'Serving Notice' }).catch(() => null),
+      ]);
       if (res.data.success) {
         setEmployees(res.data.employees);
         if (res.data.departments) setDepartments(res.data.departments);
+      }
+      if (exitRes) {
+        setPendingExits(
+          Object.fromEntries((exitRes.data.exits || []).map((e) => [e.employee?._id, e]))
+        );
       }
     } catch (error) {
       toast.error('Failed to load employee directory');
@@ -287,7 +301,21 @@ const EmployeeDirectoryPage = () => {
   };
 
   const handleToggleStatus = async (employee) => {
-    const newStatus = employee.status === 'Active' ? 'Inactive' : 'Active';
+    // Deactivating goes through an exit record, so HR keeps the dates.
+    if (employee.status === 'Active') {
+      if (employee._id === (user?._id || user?.id)) {
+        toast.error('You cannot record your own exit.');
+        return;
+      }
+      if (pendingExits[employee._id]) {
+        toast.error(`${employee.name} already has an exit recorded. Edit it from the Exits page.`);
+        return;
+      }
+      setExitTarget(employee);
+      return;
+    }
+    if (!window.confirm(`Reactivate ${employee.name}? Their exit stays in the Exits register.`)) return;
+    const newStatus = 'Active';
     try {
       const res = await api.put(`/users/${employee._id}`, { status: newStatus });
       if (res.data.success) {
@@ -662,7 +690,7 @@ const EmployeeDirectoryPage = () => {
                     <td className="px-6 py-4">
                       <button
                         onClick={() => handleToggleStatus(emp)}
-                        title="Click to toggle status"
+                        title={emp.status === 'Active' ? 'Record exit (resigned / terminated)' : 'Reactivate'}
                         className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all ${
                           emp.status === 'Active'
                             ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25 hover:bg-emerald-500/25'
@@ -676,6 +704,14 @@ const EmployeeDirectoryPage = () => {
                         />
                         {emp.status}
                       </button>
+                      {pendingExits[emp._id] && (
+                        <div
+                          className="mt-1 text-[10px] font-semibold text-amber-700 dark:text-amber-300 whitespace-nowrap"
+                          title={`${pendingExits[emp._id].exitType} — serving notice`}
+                        >
+                          Leaving {format(new Date(pendingExits[emp._id].lastWorkingDay), 'dd MMM yyyy')}
+                        </div>
+                      )}
                     </td>
 
                     {/* Leave balance */}
@@ -1550,6 +1586,14 @@ const EmployeeDirectoryPage = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {exitTarget && (
+        <RecordExitModal
+          employee={exitTarget}
+          onClose={() => setExitTarget(null)}
+          onSaved={fetchEmployees}
+        />
       )}
     </div>
   );

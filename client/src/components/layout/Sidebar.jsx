@@ -14,6 +14,8 @@ import {
   Wallet,
   User,
   Trophy,
+  UserMinus,
+  DoorOpen,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
@@ -79,6 +81,7 @@ const Sidebar = ({ isOpen, onClose }) => {
   const adminCompanyNavItems = [
     { label: 'Dashboard', path: '/admin', icon: LayoutDashboard, exact: true },
     { label: 'Employees', path: '/admin/employees', icon: Users },
+    { label: 'Exits', path: '/admin/exits', icon: UserMinus },
     { label: 'Attendance', path: '/admin/attendance', icon: Clock },
     { label: 'Time Off', path: '/admin/leaves', icon: CalendarDays },
     { label: 'Reimbursements', path: '/admin/reimbursements', icon: Receipt },
@@ -93,6 +96,7 @@ const Sidebar = ({ isOpen, onClose }) => {
     { label: 'My Time Off', path: '/employee/leaves', icon: CalendarDays },
     { label: 'My Payslips', path: '/employee/salary', icon: DollarSign },
     { label: 'My Reimbursements', path: '/employee/reimbursements', icon: Receipt },
+    { label: 'Resignation', path: '/employee/resignation', icon: DoorOpen },
     { label: 'My Profile', path: '/admin/profile', icon: UserCircle },
   ];
 
@@ -102,6 +106,7 @@ const Sidebar = ({ isOpen, onClose }) => {
     { label: 'My Time Off', path: '/employee/leaves', icon: CalendarDays },
     { label: 'My Payslips', path: '/employee/salary', icon: DollarSign },
     { label: 'My Reimbursements', path: '/employee/reimbursements', icon: Receipt },
+    { label: 'Resignation', path: '/employee/resignation', icon: DoorOpen },
     { label: 'My Profile', path: '/employee/profile', icon: UserCircle },
   ];
 
@@ -113,10 +118,12 @@ const Sidebar = ({ isOpen, onClose }) => {
     { label: 'Team Attendance', path: '/team/attendance', icon: Clock },
     { label: 'Team Time Off', path: '/team/leaves', icon: CalendarDays },
     { label: 'Team Reimbursements', path: '/team/reimbursements', icon: Receipt },
+    { label: 'Team Resignations', path: '/team/resignations', icon: UserMinus },
     { label: 'My Attendance', path: '/employee/attendance', icon: Clock },
     { label: 'My Time Off', path: '/employee/leaves', icon: CalendarDays },
     { label: 'My Payslips', path: '/employee/salary', icon: DollarSign },
     { label: 'My Reimbursements', path: '/employee/reimbursements', icon: Receipt },
+    { label: 'Resignation', path: '/employee/resignation', icon: DoorOpen },
     { label: 'My Profile', path: '/employee/profile', icon: UserCircle },
   ];
 

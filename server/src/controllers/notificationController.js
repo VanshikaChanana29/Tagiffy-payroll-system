@@ -4,9 +4,10 @@ const Leave = require('../models/Leave');
 const Attendance = require('../models/Attendance');
 const AttendanceRequest = require('../models/AttendanceRequest');
 const Reimbursement = require('../models/Reimbursement');
+const Resignation = require('../models/Resignation');
 
 // Records that belong to one employee through a userId field.
-const OWNED_KINDS = { Leave, Attendance, AttendanceRequest, Reimbursement };
+const OWNED_KINDS = { Leave, Attendance, AttendanceRequest, Reimbursement, Resignation };
 const SUBJECT_FIELDS = 'name email employeeId department designation avatar role status';
 
 // Works out which employee each notification is about, so clicking it can open
