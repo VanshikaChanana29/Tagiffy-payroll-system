@@ -65,19 +65,38 @@ const calculateOvertimeHours = (totalHours, settings) => {
 };
 
 /**
- * Present / Half-day / Absent from hours worked. Falling short of a full day
- * by no more than the grace period still counts as Present, so someone who
- * only used up their grace is not marked Half-day.
+ * Present / Half-day / Absent from hours worked, judged against the length of
+ * the shift that applies to this person (their custom shift if HR set one,
+ * else the org shift):
+ *   Present  : worked >= shift length - grace
+ *   Half-day : worked >= shift length / 2 - grace
+ *   Absent   : less than that
+ * So an 11:00-18:00 (7h) shift with 30 min grace is Present from 6h30m and
+ * Half-day from 3h. The org fullDayHours / halfDayHours are only a fallback
+ * when the shift window can't be read.
  */
 const resolveStatus = (totalHours, settings) => {
-  const fullDayMinutes = (Number(settings.fullDayHours) || 8) * 60;
-  const halfDayMinutes = (Number(settings.halfDayHours) || 4) * 60;
   const graceMinutes = Number(settings.graceMinutes) || 0;
   // Compare whole minutes: totalHours is rounded to 2 decimals.
   const workedMinutes = Math.round((Number(totalHours) || 0) * 60);
 
-  if (workedMinutes >= Math.max(halfDayMinutes, fullDayMinutes - graceMinutes)) return 'Present';
-  if (workedMinutes >= halfDayMinutes) return 'Half-day';
+  const shiftMinutes =
+    parseTimeToMinutes(settings.shiftEnd, -1) - parseTimeToMinutes(settings.shiftStart, -1);
+  const validShift =
+    parseTimeToMinutes(settings.shiftStart, -1) >= 0 &&
+    parseTimeToMinutes(settings.shiftEnd, -1) >= 0 &&
+    shiftMinutes > 0;
+
+  const fullDayMinutes = validShift ? shiftMinutes : (Number(settings.fullDayHours) || 8) * 60;
+  const halfDayMinutes = validShift
+    ? shiftMinutes / 2
+    : (Number(settings.halfDayHours) || 4) * 60;
+
+  const presentFrom = Math.max(0, fullDayMinutes - graceMinutes);
+  const halfDayFrom = Math.max(0, halfDayMinutes - graceMinutes);
+
+  if (workedMinutes >= presentFrom) return 'Present';
+  if (workedMinutes >= halfDayFrom) return 'Half-day';
   return 'Absent';
 };
 
