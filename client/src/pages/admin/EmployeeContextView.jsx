@@ -48,6 +48,7 @@ import { TaggifyIcon } from '../../components/common/TaggifyLogo';
 import Tooltip from '../../components/common/Tooltip';
 import BankDetailsCard from '../../components/profile/BankDetailsCard';
 import SalaryCard from '../../components/profile/SalaryCard';
+import { localMonthKey, nextMonthKey, monthLabel } from '../../utils/salaryTimeline';
 import { formatHours } from '../../utils/formatHours';
 
 const inr = (n) => '₹' + Math.round(Number(n) || 0).toLocaleString('en-IN');
@@ -104,7 +105,12 @@ const EmployeeContextView = () => {
 
   // Set / Revise CTC Modal
   const [showCtcModal, setShowCtcModal] = useState(false);
-  const [ctcForm, setCtcForm] = useState({ annualCtc: '', note: '' });
+  const [ctcForm, setCtcForm] = useState({
+    annualCtc: '',
+    note: '',
+    effectiveMonth: '',
+    correction: false,
+  });
   const [ctcSubmitting, setCtcSubmitting] = useState(false);
 
   const fetchAllEmployeeData = async () => {
@@ -457,7 +463,14 @@ const EmployeeContextView = () => {
 
   const openCtcModal = () => {
     const current = Number(profileData?.salary?.annualCtc) || 0;
-    setCtcForm({ annualCtc: current > 0 ? String(current) : '', note: '' });
+    setCtcForm({
+      annualCtc: current > 0 ? String(current) : '',
+      note: '',
+      // An increment is normally agreed now and paid from next month; a first
+      // CTC usually applies to the month being paid now.
+      effectiveMonth: current > 0 ? nextMonthKey() : localMonthKey(),
+      correction: false,
+    });
     setShowCtcModal(true);
   };
 
@@ -477,6 +490,8 @@ const EmployeeContextView = () => {
       const res = await api.put(`/users/${inspectedEmployee._id}/salary`, {
         annualCtc: ctc,
         note: ctcForm.note.trim(),
+        effectiveFrom: ctcForm.effectiveMonth,
+        correction: annualCtc > 0 && ctcForm.correction,
       });
       if (res.data.success) {
         toast.success(res.data.message || 'CTC saved');
@@ -1348,7 +1363,12 @@ const EmployeeContextView = () => {
             </div>
           </form>
 
-          <SalaryCard salary={emp?.salary} onEditCtc={openCtcModal} editDisabled={!profileData} />
+          <SalaryCard
+            salary={emp?.salary}
+            salaryHistory={emp?.salaryHistory}
+            onEditCtc={openCtcModal}
+            editDisabled={!profileData}
+          />
 
           {inspectedEmployee?._id && <BankDetailsCard employeeId={inspectedEmployee._id} mode="hr" />}
         </div>
@@ -2265,8 +2285,9 @@ const EmployeeContextView = () => {
             <form onSubmit={handleCtcSubmit} className="space-y-3.5 text-xs">
               {annualCtc > 0 && (
                 <p className="text-slate-500 dark:text-slate-400">
-                  Current CTC: <span className="font-semibold text-slate-700 dark:text-slate-300">{inr(annualCtc)}</span>{' '}
-                  ({inr(annualCtc / 12)}/month). It will be kept in salary history.
+                  Latest CTC: <span className="font-semibold text-slate-700 dark:text-slate-300">{inr(annualCtc)}</span>{' '}
+                  ({inr(annualCtc / 12)}/month), effective {monthLabel(emp?.salary?.effectiveFrom)}.
+                  {ctcForm.correction ? ' It will be replaced.' : ' It will be kept in salary history.'}
                 </p>
               )}
 
@@ -2311,8 +2332,42 @@ const EmployeeContextView = () => {
                 />
               </div>
 
+              <div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Effective from (month) *
+                </label>
+                <input
+                  type="month"
+                  required
+                  value={ctcForm.effectiveMonth}
+                  onChange={(e) => setCtcForm({ ...ctcForm, effectiveMonth: e.target.value })}
+                  className="theme-input w-full"
+                />
+                <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                  Payroll uses this CTC from the 1st of this month. Earlier months keep the previous CTC,
+                  even if their payroll is run after today.
+                </p>
+              </div>
+
+              {annualCtc > 0 && (
+                <label className="flex items-start gap-2 p-3 rounded-xl bg-amber-500/5 border border-amber-500/25 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={ctcForm.correction}
+                    onChange={(e) => setCtcForm({ ...ctcForm, correction: e.target.checked })}
+                    className="mt-0.5"
+                  />
+                  <span className="text-[11px] text-slate-600 dark:text-slate-400">
+                    <span className="font-semibold text-slate-700 dark:text-slate-300">
+                      Correct the latest entry instead of adding a revision.
+                    </span>{' '}
+                    Use this if the latest CTC was entered with the wrong amount or month.
+                  </span>
+                </label>
+              )}
+
               <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                Takes effect from today. Payslips already generated are not changed; the next payroll run uses the new amount.
+                Payslips already generated are not changed.
               </p>
 
               <div className="flex items-center justify-end gap-2 pt-2">

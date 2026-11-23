@@ -13,7 +13,8 @@ const {
 const { saveFile, deleteFile, sendStoredFile } = require('../utils/fileStorage');
 const { buildInitialsAvatar } = require('../utils/initialsAvatar');
 const OrgSettings = require('../models/OrgSettings');
-const { buildSalaryBreakup } = require('../utils/salaryStructure');
+const Salary = require('../models/Salary');
+const { buildSalaryBreakup, toEffectiveMonth } = require('../utils/salaryStructure');
 const { getVisibleUserIds, getDirectReports } = require('../utils/teamScope');
 const { parseEmployeeSheet, buildEmployeeTemplateWorkbook } = require('../utils/bulkEmployeeImport');
 const { isAdminRole, isSuperAdmin } = require('../utils/roles');
@@ -1664,10 +1665,17 @@ const previewSalaryBreakup = async (req, res) => {
 //
 // A revision is never an in-place edit: the outgoing structure is pushed to
 // history first, so payslips already issued remain explainable.
+//
+// `effectiveFrom` is a month ("YYYY-MM"); the revision applies to payroll from
+// the 1st of that month, and earlier months keep the previous structure. An
+// increment agreed on 16 Nov "from December" is entered with 2026-12.
+//
+// `correction: true` replaces the current structure in place instead of
+// archiving it — for fixing an entry made with the wrong amount or month.
 const updateEmployeeSalary = async (req, res) => {
   try {
     const { id } = req.params;
-    const { annualCtc, effectiveFrom, note = '', components } = req.body;
+    const { annualCtc, effectiveFrom, note = '', components, correction = false } = req.body;
 
     const employee = await User.findById(id);
     if (!employee) {
@@ -1714,10 +1722,23 @@ const updateEmployeeSalary = async (req, res) => {
       delete next.netMonthly;
     }
 
-    next.effectiveFrom = effectiveFrom ? new Date(effectiveFrom) : new Date();
+    if (effectiveFrom) {
+      next.effectiveFrom = toEffectiveMonth(effectiveFrom);
+      if (!next.effectiveFrom) {
+        return res.status(400).json({
+          success: false,
+          message: 'Please provide a valid effective month (YYYY-MM).',
+        });
+      }
+    } else {
+      next.effectiveFrom = toEffectiveMonth(new Date());
+    }
 
-    // Archive the structure being replaced.
-    if (employee.salary && employee.salary.monthlyGross > 0) {
+    const hasCurrent = employee.salary && employee.salary.monthlyGross > 0;
+
+    // Archive the structure being replaced, unless HR is correcting a mistake
+    // in it, in which case the wrong entry is simply overwritten.
+    if (hasCurrent && !correction) {
       employee.salaryHistory.push({
         annualCtc: employee.salary.annualCtc,
         monthlyGross: employee.salary.monthlyGross,
@@ -1738,9 +1759,38 @@ const updateEmployeeSalary = async (req, res) => {
     employee.salary = next;
     await employee.save();
 
+    // Payslips are stored figures and are never recalculated. If any already
+    // exist from the effective month on, say so, so HR can adjust them by hand.
+    const effYear = next.effectiveFrom.getUTCFullYear();
+    const effMonth = next.effectiveFrom.getUTCMonth() + 1;
+    const issued = await Salary.find({
+      userId: employee._id,
+      $or: [{ year: { $gt: effYear } }, { year: effYear, month: { $gte: effMonth } }],
+    })
+      .sort({ year: 1, month: 1 })
+      .select('month year');
+
+    const effLabel = next.effectiveFrom.toLocaleDateString('en-IN', {
+      month: 'short',
+      year: 'numeric',
+      timeZone: 'UTC',
+    });
+    let message = `Salary saved for ${employee.name} — ₹${next.monthlyGross}/month from ${effLabel}`;
+    if (issued.length > 0) {
+      const labels = issued.map((s) =>
+        new Date(Date.UTC(s.year, s.month - 1, 1)).toLocaleDateString('en-IN', {
+          month: 'short',
+          year: 'numeric',
+          timeZone: 'UTC',
+        })
+      );
+      message += `. Payslips already generated for ${labels.join(', ')} were not changed — edit them in Payroll if needed.`;
+    }
+
     res.status(200).json({
       success: true,
-      message: `Salary structure saved for ${employee.name} — monthly gross ₹${next.monthlyGross}`,
+      message,
+      issuedPayslips: issued.length,
       salary: employee.salary,
       salaryHistory: employee.salaryHistory,
     });

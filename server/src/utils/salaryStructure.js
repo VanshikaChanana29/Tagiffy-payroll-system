@@ -37,4 +37,77 @@ const perDaySalary = (monthlyGross, { calendarDays, workingDays }, settings) => 
   return round(monthlyGross / divisor);
 };
 
-module.exports = { buildSalaryBreakup, perDaySalary, round };
+/**
+ * "YYYY-MM" for a date, read in UTC so it matches how effective months are
+ * stored (1st of the month, 00:00 UTC). Empty string for a missing date, which
+ * sorts before every month and so means "in effect from the beginning".
+ */
+const monthKey = (date) => {
+  if (!date) return '';
+  const d = new Date(date);
+  if (Number.isNaN(d.getTime())) return '';
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+};
+
+/**
+ * Normalises an effective date to the 1st of its month (00:00 UTC). Accepts
+ * "YYYY-MM", "YYYY-MM-DD" or a Date. Returns null when it cannot be read.
+ */
+const toEffectiveMonth = (value) => {
+  if (!value) return null;
+  const match = typeof value === 'string' && value.match(/^(\d{4})-(\d{2})/);
+  if (match) {
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    if (month < 1 || month > 12) return null;
+    return new Date(Date.UTC(year, month - 1, 1));
+  }
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
+};
+
+/**
+ * The employee's salary revisions as a timeline, oldest first.
+ *
+ * Revisions are replayed in the order HR entered them (archived history, then
+ * the current structure). Each one applies from its effective month onwards
+ * and replaces whatever was set for that month or later, so a backdated or
+ * re-entered revision wins over an older entry for the same months.
+ */
+const salaryTimeline = (employee) => {
+  const entries = [...(employee?.salaryHistory || []), employee?.salary].filter(
+    (s) => s && Number(s.monthlyGross) > 0
+  );
+
+  let timeline = [];
+  entries.forEach((entry) => {
+    const key = monthKey(entry.effectiveFrom);
+    timeline = timeline.filter((t) => monthKey(t.effectiveFrom) < key);
+    timeline.push(entry);
+  });
+  return timeline;
+};
+
+/**
+ * The salary structure that applies to a given payroll month, or null when no
+ * revision is in effect yet (e.g. the first CTC starts in a later month).
+ */
+const salaryForMonth = (employee, month, year) => {
+  const target = `${year}-${String(month).padStart(2, '0')}`;
+  let picked = null;
+  salaryTimeline(employee).forEach((entry) => {
+    if (monthKey(entry.effectiveFrom) <= target) picked = entry;
+  });
+  return picked;
+};
+
+module.exports = {
+  buildSalaryBreakup,
+  perDaySalary,
+  round,
+  monthKey,
+  toEffectiveMonth,
+  salaryTimeline,
+  salaryForMonth,
+};

@@ -834,7 +834,7 @@ const ProfilePage = () => {
         )}
       </form>
 
-      <SalaryCard salary={user?.salary} />
+      <SalaryCard salary={user?.salary} salaryHistory={user?.salaryHistory} />
 
       {(user?._id || user?.id) && <BankDetailsCard employeeId={user._id || user.id} mode="self" />}
 

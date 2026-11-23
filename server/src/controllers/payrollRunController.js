@@ -6,7 +6,7 @@ const Attendance = require('../models/Attendance');
 const OrgSettings = require('../models/OrgSettings');
 const { isWorkingDay } = require('../utils/attendanceRules');
 const { getHolidayMap } = require('./holidayController');
-const { perDaySalary, round } = require('../utils/salaryStructure');
+const { perDaySalary, round, salaryForMonth } = require('../utils/salaryStructure');
 const {
   planAdvanceRecovery,
   getPendingAdvancesByUser,
@@ -154,7 +154,10 @@ const buildPayslipForEmployee = async (employee, month, year, settings) => {
     isWorkingDay(d, settings, holidayMap, employee.weeklyOffDays)
   ).length;
 
-  const salary = employee.salary || {};
+  // The structure in effect for this month, not simply the latest one: an
+  // increment entered today but effective from next month must not touch
+  // this month's pay.
+  const salary = salaryForMonth(employee, month, year) || {};
   const monthlyGross = Number(salary.monthlyGross) || 0;
 
   const { lopDays, unpaidLeaveDays, absentDays } = await calculateLopDays(
@@ -259,11 +262,14 @@ const runPayroll = async (req, res) => {
       // Without a salary structure there is nothing to pay from, and guessing
       // a number is worse than reporting the gap. Exempt employees are the
       // exception: HR types their amount, so a structure is only a suggestion.
-      if (!employee.attendanceExempt && (!employee.salary || !employee.salary.monthlyGross)) {
+      if (!employee.attendanceExempt && !salaryForMonth(employee, targetMonth, targetYear)) {
+        const hasAnyCtc = Number(employee.salary?.monthlyGross) > 0;
         skipped.push({
           employeeName: employee.name,
           employeeId: employee.employeeId,
-          reason: 'No salary structure set — add their CTC first',
+          reason: hasAnyCtc
+            ? 'Their CTC takes effect from a later month — none applies to this month'
+            : 'No salary structure set — add their CTC first',
         });
         continue;
       }
